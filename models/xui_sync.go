@@ -55,10 +55,11 @@ type XUISkippedNode struct {
 }
 
 type XUINodeLink struct {
-	Name      string `json:"name"`
-	Link      string `json:"link"`
-	SubID     string `json:"subId"`
-	SourceKey string `json:"sourceKey"`
+	Name         string `json:"name"`
+	Link         string `json:"link"`
+	LinkOverride string `json:"linkOverride"`
+	SubID        string `json:"subId"`
+	SourceKey    string `json:"sourceKey"`
 }
 
 type XUINodeLinkOptions struct {
@@ -213,7 +214,7 @@ func UpsertXUINodeLinks(nodeLinks []XUINodeLink, opts XUINodeLinkOptions) (XUISy
 		}
 
 		name := uniqueXUIName(opts.NamePrefix+nodeLink.Name, usedNames)
-		action, hash, err := upsertXUINode(name, nodeLink.Link, opts.SourceName, sourceKey, nodeLink.SubID, opts.GroupName)
+		action, hash, err := upsertXUINode(name, nodeLink.Link, nodeLink.LinkOverride, opts.SourceName, sourceKey, nodeLink.SubID, opts.GroupName)
 		if err != nil {
 			result.Skipped++
 			result.SkippedOn = append(result.SkippedOn, XUISkippedNode{
@@ -431,8 +432,11 @@ func uniqueXUIName(base string, used map[string]int) string {
 	return fmt.Sprintf("%s (%d)", base, used[base])
 }
 
-func upsertXUINode(name, link, source, sourceKey, subID, groupName string) (string, string, error) {
-	hash := hashLink(link)
+func upsertXUINode(name, link, linkOverride, source, sourceKey, subID, groupName string) (string, string, error) {
+	if linkOverride == link {
+		linkOverride = ""
+	}
+	hash := hashLink(link + "\n" + linkOverride)
 	var existing Node
 	err := DB.Unscoped().Where("source = ? and source_key = ?", source, sourceKey).First(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -447,11 +451,12 @@ func upsertXUINode(name, link, source, sourceKey, subID, groupName string) (stri
 	action := "unchanged"
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		existing = Node{
-			Name:      name,
-			Link:      link,
-			Source:    source,
-			SourceKey: sourceKey,
-			SubID:     subID,
+			Name:         name,
+			Link:         link,
+			LinkOverride: linkOverride,
+			Source:       source,
+			SourceKey:    sourceKey,
+			SubID:        subID,
 		}
 		if err := DB.Create(&existing).Error; err != nil {
 			return "", "", err
@@ -460,10 +465,11 @@ func upsertXUINode(name, link, source, sourceKey, subID, groupName string) (stri
 	} else if err != nil {
 		return "", "", err
 	} else {
-		changed := existing.Name != name || existing.Link != link || existing.Source != source || existing.SourceKey != sourceKey || existing.SubID != subID || existing.DeletedAt.Valid
+		changed := existing.Name != name || existing.Link != link || existing.LinkOverride != linkOverride || existing.Source != source || existing.SourceKey != sourceKey || existing.SubID != subID || existing.DeletedAt.Valid
 		if changed {
 			existing.Name = name
 			existing.Link = link
+			existing.LinkOverride = linkOverride
 			existing.Source = source
 			existing.SourceKey = sourceKey
 			existing.SubID = subID

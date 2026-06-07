@@ -37,6 +37,7 @@ type XUISource struct {
 	SubPath         string
 	GroupName       string
 	NamePrefix      string
+	RewriteRules    string `gorm:"type:text"`
 	DeleteMissing   bool
 	Enabled         bool
 	LastSyncAt      *time.Time
@@ -60,6 +61,7 @@ type XUISourceInput struct {
 	SubPath       string `json:"subPath"`
 	GroupName     string `json:"groupName"`
 	NamePrefix    string `json:"namePrefix"`
+	RewriteRules  string `json:"rewriteRules"`
 	DeleteMissing bool   `json:"deleteMissing"`
 	Enabled       bool   `json:"enabled"`
 }
@@ -77,6 +79,7 @@ type XUISourceView struct {
 	SubPath         string     `json:"subPath"`
 	GroupName       string     `json:"groupName"`
 	NamePrefix      string     `json:"namePrefix"`
+	RewriteRules    string     `json:"rewriteRules"`
 	DeleteMissing   bool       `json:"deleteMissing"`
 	Enabled         bool       `json:"enabled"`
 	HasPassword     bool       `json:"hasPassword"`
@@ -101,6 +104,7 @@ func (s XUISource) View() XUISourceView {
 		SubPath:         s.SubPath,
 		GroupName:       s.GroupName,
 		NamePrefix:      s.NamePrefix,
+		RewriteRules:    s.RewriteRules,
 		DeleteMissing:   s.DeleteMissing,
 		Enabled:         s.Enabled,
 		HasPassword:     s.Password != "",
@@ -164,8 +168,12 @@ func SaveXUISource(input XUISourceInput) (XUISourceView, error) {
 	source.SubPath = strings.Trim(input.SubPath, "/ ")
 	source.GroupName = strings.TrimSpace(input.GroupName)
 	source.NamePrefix = strings.TrimSpace(input.NamePrefix)
+	source.RewriteRules = strings.TrimSpace(input.RewriteRules)
 	source.DeleteMissing = input.DeleteMissing
 	source.Enabled = input.Enabled
+	if _, err := parseXUINodeRewriteRules(source.RewriteRules); err != nil {
+		return XUISourceView{}, err
+	}
 	if source.SSHPort == 0 {
 		source.SSHPort = 22
 	}
@@ -300,7 +308,10 @@ func (s XUISource) Sync() (XUISyncResult, error) {
 	if err != nil {
 		return XUISyncResult{}, err
 	}
-	nodes = rewriteLocalhostNodeLinks(nodes, s.publicHost())
+	nodes, err = applyNodeLinkOverrides(nodes, s.publicHost(), s.RewriteRules)
+	if err != nil {
+		return XUISyncResult{}, err
+	}
 	return UpsertXUINodeLinks(nodes, XUINodeLinkOptions{
 		SourceName:    fmt.Sprintf("3x-ui-source:%d", s.ID),
 		GroupName:     s.GroupName,
@@ -321,6 +332,39 @@ func (s XUISource) publicHost() string {
 		return ""
 	}
 	return parsed.Hostname()
+}
+
+func applyNodeLinkOverrides(nodes []XUINodeLink, publicHost, rawRules string) ([]XUINodeLink, error) {
+	rules, err := parseXUINodeRewriteRules(rawRules)
+	if err != nil {
+		return nodes, err
+	}
+	for i := range nodes {
+		outputLink := nodes[i].Link
+		if link, ok := rewriteLocalhostNodeLink(outputLink, publicHost); ok {
+			outputLink = link
+		}
+		if len(rules) > 0 {
+			link, changed, err := rewriteNodeLinkByRules(XUINodeLink{
+				Name:      nodes[i].Name,
+				Link:      outputLink,
+				SubID:     nodes[i].SubID,
+				SourceKey: nodes[i].SourceKey,
+			}, rules)
+			if err != nil {
+				return nodes, err
+			}
+			if changed {
+				outputLink = link
+			}
+		}
+		if outputLink != nodes[i].Link {
+			nodes[i].LinkOverride = outputLink
+		} else {
+			nodes[i].LinkOverride = ""
+		}
+	}
+	return nodes, nil
 }
 
 func rewriteLocalhostNodeLinks(nodes []XUINodeLink, publicHost string) []XUINodeLink {
@@ -352,6 +396,144 @@ func rewriteLocalhostNodeLink(link, publicHost string) (string, bool) {
 		parsed.Host = publicHost
 	}
 	return parsed.String(), true
+}
+
+type xuiNodeRewriteRule struct {
+	NameContains string `json:"nameContains"`
+	Protocol     string `json:"protocol"`
+	Transport    string `json:"transport"`
+	Security     string `json:"security"`
+	SNI          string `json:"sni"`
+	Host         string `json:"host"`
+	Fingerprint  string `json:"fp"`
+	Fingerprint2 string `json:"fingerprint"`
+	ALPN         string `json:"alpn"`
+	Path         string `json:"path"`
+	Flow         string `json:"flow"`
+	Address      string `json:"address"`
+	Port         string `json:"port"`
+}
+
+func parseXUINodeRewriteRules(raw string) ([]xuiNodeRewriteRule, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var rules []xuiNodeRewriteRule
+	if err := json.Unmarshal([]byte(raw), &rules); err == nil {
+		return rules, nil
+	}
+	var rule xuiNodeRewriteRule
+	if err := json.Unmarshal([]byte(raw), &rule); err != nil {
+		return nil, fmt.Errorf("rewriteRules must be valid JSON: %w", err)
+	}
+	return []xuiNodeRewriteRule{rule}, nil
+}
+
+func rewriteNodeLinksByRules(nodes []XUINodeLink, rawRules string) ([]XUINodeLink, error) {
+	rules, err := parseXUINodeRewriteRules(rawRules)
+	if err != nil {
+		return nodes, err
+	}
+	if len(rules) == 0 {
+		return nodes, nil
+	}
+	for i := range nodes {
+		link, changed, err := rewriteNodeLinkByRules(nodes[i], rules)
+		if err != nil {
+			return nodes, err
+		}
+		if changed {
+			nodes[i].Link = link
+		}
+	}
+	return nodes, nil
+}
+
+func rewriteNodeLinkByRules(node XUINodeLink, rules []xuiNodeRewriteRule) (string, bool, error) {
+	parsed, err := url.Parse(node.Link)
+	if err != nil || parsed.Host == "" {
+		return node.Link, false, nil
+	}
+	changed := false
+	query := parsed.Query()
+	for _, rule := range rules {
+		if !xuiRewriteRuleMatches(rule, node, parsed, query) {
+			continue
+		}
+		if applyXUIRewriteRule(rule, parsed, query) {
+			changed = true
+		}
+	}
+	if !changed {
+		return node.Link, false, nil
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), true, nil
+}
+
+func xuiRewriteRuleMatches(rule xuiNodeRewriteRule, node XUINodeLink, parsed *url.URL, query url.Values) bool {
+	if rule.NameContains != "" && !strings.Contains(strings.ToLower(node.Name), strings.ToLower(rule.NameContains)) {
+		return false
+	}
+	if rule.Protocol != "" && !strings.EqualFold(parsed.Scheme, rule.Protocol) {
+		return false
+	}
+	if rule.Transport != "" {
+		transport := firstNonEmpty(query.Get("type"), query.Get("network"))
+		if !strings.EqualFold(transport, rule.Transport) {
+			return false
+		}
+	}
+	return true
+}
+
+func applyXUIRewriteRule(rule xuiNodeRewriteRule, parsed *url.URL, query url.Values) bool {
+	changed := false
+	setQuery := func(key, value string) {
+		value = strings.TrimSpace(value)
+		if value == "" || query.Get(key) == value {
+			return
+		}
+		query.Set(key, value)
+		changed = true
+	}
+	setQuery("security", rule.Security)
+	setQuery("sni", rule.SNI)
+	setQuery("host", rule.Host)
+	setQuery("fp", firstNonEmpty(rule.Fingerprint, rule.Fingerprint2))
+	setQuery("alpn", rule.ALPN)
+	setQuery("path", rule.Path)
+	setQuery("flow", rule.Flow)
+
+	address := strings.TrimSpace(rule.Address)
+	port := strings.TrimSpace(rule.Port)
+	if address != "" || port != "" {
+		if address == "" {
+			address = parsed.Hostname()
+		}
+		if port == "" {
+			port = parsed.Port()
+		}
+		nextHost := address
+		if port != "" {
+			nextHost = net.JoinHostPort(address, port)
+		}
+		if parsed.Host != nextHost {
+			parsed.Host = nextHost
+			changed = true
+		}
+	}
+	return changed
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (s XUISource) fetchRemoteNodes() ([]XUINodeLink, error) {

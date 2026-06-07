@@ -117,15 +117,16 @@ func GetV2ray(c *gin.Context) {
 	}
 	baselist := ""
 	for _, v := range sub.Nodes {
+		link := v.SubscriptionLink()
 		switch {
 		// 如果包含多条节点
-		case strings.Contains(v.Link, ","):
-			links := strings.Split(v.Link, ",")
+		case strings.Contains(link, ","):
+			links := strings.Split(link, ",")
 			baselist += strings.Join(links, "\n") + "\n"
 			continue
 		//如果是订阅转换
-		case strings.Contains(v.Link, "http://") || strings.Contains(v.Link, "https://"):
-			resp, err := http.Get(v.Link)
+		case strings.Contains(link, "http://") || strings.Contains(link, "https://"):
+			resp, err := http.Get(link)
 			if err != nil {
 				log.Println(err)
 				return
@@ -136,7 +137,7 @@ func GetV2ray(c *gin.Context) {
 			baselist += nodes + "\n"
 		// 默认
 		default:
-			baselist += v.Link + "\n"
+			baselist += link + "\n"
 		}
 	}
 	c.Set("subname", SunName)
@@ -163,17 +164,18 @@ func GetClash(c *gin.Context) {
 	models.DB.Model(sub).Preload("Nodes").Find(&sub)
 	log.Println("订阅名:", sub.Nodes)
 	for _, v := range sub.Nodes {
+		link := v.SubscriptionLink()
 		log.Println("节点信息:", v)
-		log.Println("节点链接:", v.Link)
+		log.Println("节点链接:", link)
 		switch {
 		// 如果包含多条节点
-		case strings.Contains(v.Link, ","):
-			links := strings.Split(v.Link, ",")
+		case strings.Contains(link, ","):
+			links := strings.Split(link, ",")
 			urls = append(urls, links...)
 			continue
 		//如果是订阅转换
-		case strings.Contains(v.Link, "http://") || strings.Contains(v.Link, "https://"):
-			resp, err := http.Get(v.Link)
+		case strings.Contains(link, "http://") || strings.Contains(link, "https://"):
+			resp, err := http.Get(link)
 			if err != nil {
 				log.Println(err)
 				return
@@ -185,7 +187,7 @@ func GetClash(c *gin.Context) {
 			urls = append(urls, links...)
 		// 默认
 		default:
-			urls = append(urls, v.Link)
+			urls = append(urls, link)
 		}
 	}
 	log.Println("urls", urls)
@@ -224,15 +226,16 @@ func GetSurge(c *gin.Context) {
 	}
 	urls := []string{}
 	for _, v := range sub.Nodes {
+		link := v.SubscriptionLink()
 		switch {
 		// 如果包含多条节点
-		case strings.Contains(v.Link, ","):
-			links := strings.Split(v.Link, ",")
+		case strings.Contains(link, ","):
+			links := strings.Split(link, ",")
 			urls = append(urls, links...)
 			continue
 		//如果是订阅转换
-		case strings.Contains(v.Link, "http://") || strings.Contains(v.Link, "https://"):
-			resp, err := http.Get(v.Link)
+		case strings.Contains(link, "http://") || strings.Contains(link, "https://"):
+			resp, err := http.Get(link)
 			if err != nil {
 				log.Println(err)
 				return
@@ -244,7 +247,7 @@ func GetSurge(c *gin.Context) {
 			urls = append(urls, links...)
 		// 默认
 		default:
-			urls = append(urls, v.Link)
+			urls = append(urls, link)
 		}
 	}
 
