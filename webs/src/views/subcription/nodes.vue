@@ -59,9 +59,12 @@ interface XUIRewriteRuleRow {
   path: string
   flow: string
 }
-onMounted(async() => {  // 椤甸潰寮€濮嬫墽琛屽嚱鏁?   getnodes()
-   GetGroups()
-   getXUISources()
+const ALL_GROUP_NAME = '全部';
+
+onMounted(async() => {
+   await getnodes()
+   await GetGroups()
+   await getXUISources()
 })
 const dialogMode = ref<'add' | 'edit'>('add');
 
@@ -79,7 +82,7 @@ const tableData = ref<Node[]>([])
 // 鍒嗙粍鍒楄〃涓存椂瀛樻斁鏁版嵁
 const tableDataTemp = ref<Node[]>([])
 // 鍒嗙粍鍒楄〃涓存椂瀛樻斁鏁版嵁
-const activeName = ref('鍏ㄩ儴')
+const activeName = ref(ALL_GROUP_NAME)
 const Nodedialog = ref (false); // 寮圭獥鏄惁鍙
 const Groupdialog = ref (false); // 寮圭獥鏄惁鍙
 const NodeForm = ref<NodeInfo>({
@@ -219,7 +222,7 @@ async function getnodes() {
   
 } 
 function applyActiveGroupFilter() {
-  if (activeName.value === '鍏ㄩ儴') {
+  if (activeName.value === ALL_GROUP_NAME) {
     tableData.value = tableDataTemp.value;
     return;
   }
@@ -355,8 +358,8 @@ async function syncAllXUISources() {
 async function GetGroups() {
   const {data} = await GetGroup();
   allGroupNames.value = Array.isArray(data) ? data : [];
-  if (activeName.value !== '全部' && !allGroupNames.value.includes(activeName.value)) {
-    activeName.value = '全部';
+  if (activeName.value !== ALL_GROUP_NAME && !allGroupNames.value.includes(activeName.value)) {
+    activeName.value = ALL_GROUP_NAME;
   }
   RadioGroup.value = allGroupNames.value.length > 0 ? "1" : "2";
   applyActiveGroupFilter();
