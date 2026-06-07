@@ -104,6 +104,12 @@ curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xu
 docker compose up -d
 ```
 
+Non-Docker systemd install:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xui-sources-docker/scripts/install-non-docker.sh)
+```
+
 Open `http://SERVER_IP:8000`, then use:
 
 ```text

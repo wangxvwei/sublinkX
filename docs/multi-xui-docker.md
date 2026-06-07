@@ -4,10 +4,18 @@ This fork can run as a central SublinkX service and import nodes from multiple r
 
 ## One-command Deploy
 
+Docker:
+
 ```bash
 mkdir -p sublinkx && cd sublinkx && \
 curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xui-sources-docker/docker-compose.multi-xui.yml -o docker-compose.yml && \
 docker compose up -d
+```
+
+Non-Docker systemd install:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xui-sources-docker/scripts/install-non-docker.sh)
 ```
 
 Open:
