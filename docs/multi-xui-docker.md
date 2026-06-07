@@ -18,6 +18,31 @@ Non-Docker systemd install:
 bash <(curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xui-sources-docker/scripts/install-non-docker.sh)
 ```
 
+## Recommended Workflow
+
+Use the non-Docker installer on a VPS when you want to test the feature quickly:
+
+```bash
+INSTALL_DIR=/opt/sublinkx-test SERVICE_NAME=sublinkx-test SUBLINK_PORT=18000 \
+bash <(curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xui-sources-docker/scripts/install-non-docker.sh)
+```
+
+This avoids touching an existing `/usr/local/bin/sublink` service. Open:
+
+```text
+http://VPS_IP:18000
+```
+
+For real long-term use, deploy the Docker compose file on your NAS:
+
+```bash
+mkdir -p sublinkx && cd sublinkx && \
+curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xui-sources-docker/docker-compose.multi-xui.yml -o docker-compose.yml && \
+docker compose up -d
+```
+
+The NAS only needs outbound SSH access to each 3x-ui VPS. The 3x-ui admin panel does not need to be public.
+
 Open:
 
 ```text

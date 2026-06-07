@@ -110,6 +110,15 @@ Non-Docker systemd install:
 bash <(curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xui-sources-docker/scripts/install-non-docker.sh)
 ```
 
+VPS test install without touching an existing Sublink service:
+
+```bash
+INSTALL_DIR=/opt/sublinkx-test SERVICE_NAME=sublinkx-test SUBLINK_PORT=18000 \
+bash <(curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xui-sources-docker/scripts/install-non-docker.sh)
+```
+
+Use Docker on your NAS for the real long-term deployment. The NAS only needs outbound SSH access to each 3x-ui VPS.
+
 Open `http://SERVER_IP:8000`, then use:
 
 ```text
