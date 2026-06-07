@@ -1,6 +1,6 @@
 <script setup lang='ts'>
 import { ref,onMounted,nextTick  } from 'vue'
-import {getNodes,AddNodes,DelNode,UpdateNode,GetGroup,SetGroup} from "@/api/subcription/node"
+import {getNodes,AddNodes,DelNode,UpdateNode,GetGroup,SetGroup,SyncXUINodes} from "@/api/subcription/node"
 import type { ElTable } from 'element-plus'
 
 interface GroupNode {
@@ -31,7 +31,7 @@ const dialogMode = ref<'add' | 'edit'>('add');
 
 // --- 表格选择与操作相关数据 ---
 const multipleSelection = ref<Node[]>([]); // Stores selected table items
-const multipleTable = ref<InstanceType<typeof ElTable> | null>(null)
+const multipleTable = ref<any>(null)
 
 
 const tableRefs = ref<{ [key: string]: any }>({}); // Stores references to each el-table
@@ -85,6 +85,20 @@ async function getnodes() {
   });
   
 } 
+async function syncXUINodes() {
+  try {
+    const { data } = await SyncXUINodes();
+    ElMessage.success(`3x-ui sync: +${data.created} / ~${data.updated} / =${data.unchanged}`);
+    if (data.skipped > 0) {
+      console.warn('3x-ui sync skipped nodes:', data.skippedOn);
+    }
+    await getnodes();
+    await GetGroups();
+  } catch (error) {
+    console.error('3x-ui sync failed:', error);
+    ElMessage.error('3x-ui sync failed');
+  }
+}
 async function GetGroups() {
   const {data} = await GetGroup();
   if (Array.isArray(data) && data.length > 0) {
@@ -110,7 +124,7 @@ const handleAddNode = () => {
   NodeGroupInput.value = '';
 };
 
-const handleEditNode = (row: Node) => {  
+const handleEditNode = (row: any) => {  
   // NodeNewNameInput.value = row.Name; // 编辑时使用原名称
   // NodeNewLinkInput.value = row.Link; // 编辑时使用原链接
   dialogMode.value = 'edit';
@@ -120,7 +134,7 @@ const handleEditNode = (row: Node) => {
     Title: '编辑节点',
     Name: row.Name,
     Link: row.Link,
-    GroupName: (row.GroupNodes || []).map(g => g.Name),
+    GroupName: (row.GroupNodes || []).map((g: any) => g.Name),
   };
   SelectionNodeGroups.value = NodeForm.value.GroupName || [];
   SelectionNode.value = row.Name;
@@ -281,10 +295,10 @@ const copyUrl = (url: string) => {
   }
 };
 // 复制表格节点信息
-const copyInfo = (row: Node) => {
+const copyInfo = (row: any) => {
   copyUrl(row.Link);
 };
-const handleDel = async (row: Node) => {
+const handleDel = async (row: any) => {
   try {
     await ElMessageBox.confirm(
       `你是否要删除 ${row.Name} ?`,
@@ -458,6 +472,7 @@ watch(activeName, (newVal) => {
       <el-tab-pane :label="item" :name="item" v-for="item in allGroupNames" :key="item" />
     </el-tabs>
       <el-button type="primary" @click="handleAddNode">添加节点</el-button>
+      <el-button type="success" @click="syncXUINodes">同步 3x-ui 节点</el-button>
       <div style="margin-bottom: 10px"></div>
       <el-table
       ref="multipleTable"

@@ -19,6 +19,9 @@ type Node struct {
 	ID         int
 	Name       string
 	Link       string
+	Source     string      `gorm:"index"`
+	SourceKey  string      `gorm:"index"`
+	SubID      string      `gorm:"index"`
 	GroupNodes []GroupNode `gorm:"many2many:group_node_nodes"` // 反向关联字段
 }
 

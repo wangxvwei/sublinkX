@@ -60,3 +60,14 @@ export function DelGroup(data: any){
     params: data,
   });
 }
+
+export function SyncXUINodes(data: any = {}){
+  return request({
+    url: "/api/v1/nodes/sync/xui",
+    method: "post",
+    data,
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+}
