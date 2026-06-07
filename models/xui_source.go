@@ -43,6 +43,7 @@ type XUISourceInput struct {
 	Host          string `json:"host"`
 	SSHPort       int    `json:"sshPort"`
 	Username      string `json:"username"`
+	AuthType      string `json:"authType"`
 	Password      string `json:"password"`
 	PrivateKey    string `json:"privateKey"`
 	XUIDBPath     string `json:"xuiDbPath"`
@@ -60,6 +61,7 @@ type XUISourceView struct {
 	Host            string     `json:"host"`
 	SSHPort         int        `json:"sshPort"`
 	Username        string     `json:"username"`
+	AuthType        string     `json:"authType"`
 	XUIDBPath       string     `json:"xuiDbPath"`
 	SubBaseURL      string     `json:"subBaseUrl"`
 	SubPath         string     `json:"subPath"`
@@ -75,12 +77,17 @@ type XUISourceView struct {
 }
 
 func (s XUISource) View() XUISourceView {
+	authType := "password"
+	if s.PrivateKey != "" && s.Password == "" {
+		authType = "privateKey"
+	}
 	return XUISourceView{
 		ID:              s.ID,
 		Name:            s.Name,
 		Host:            s.Host,
 		SSHPort:         s.SSHPort,
 		Username:        s.Username,
+		AuthType:        authType,
 		XUIDBPath:       s.XUIDBPath,
 		SubBaseURL:      s.SubBaseURL,
 		SubPath:         s.SubPath,
@@ -145,11 +152,26 @@ func SaveXUISource(input XUISourceInput) (XUISourceView, error) {
 	if source.NamePrefix == "" && source.Name != "" {
 		source.NamePrefix = "[" + source.Name + "] "
 	}
-	if strings.TrimSpace(input.Password) != "" {
-		source.Password = input.Password
+	authType := strings.TrimSpace(input.AuthType)
+	if authType == "" {
+		authType = "password"
+		if strings.TrimSpace(input.PrivateKey) != "" {
+			authType = "privateKey"
+		}
 	}
-	if strings.TrimSpace(input.PrivateKey) != "" {
-		source.PrivateKey = input.PrivateKey
+	switch authType {
+	case "password":
+		if strings.TrimSpace(input.Password) != "" {
+			source.Password = input.Password
+		}
+		source.PrivateKey = ""
+	case "privateKey":
+		if strings.TrimSpace(input.PrivateKey) != "" {
+			source.PrivateKey = input.PrivateKey
+		}
+		source.Password = ""
+	default:
+		return XUISourceView{}, errors.New("authType must be password or privateKey")
 	}
 	if source.Name == "" || source.Host == "" || source.Username == "" {
 		return XUISourceView{}, errors.New("name, host and username are required")

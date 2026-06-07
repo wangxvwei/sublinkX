@@ -28,6 +28,7 @@ interface XUISource {
   host: string
   sshPort: number
   username: string
+  authType?: 'password' | 'privateKey'
   password?: string
   privateKey?: string
   xuiDbPath: string
@@ -81,6 +82,8 @@ const SelectionNode = ref(''); // 选中的节点
 // const SelectionNodes = ref([]); // 选中的节点
 const RadioGroup = ref("1"); // 分组单选框
 const SourceDialog = ref(false);
+const showSourceAdvanced = ref(false);
+const sourceAuthType = ref<'password' | 'privateKey'>('password');
 const sourceTableData = ref<XUISource[]>([]);
 const sourceForm = ref<XUISource>({
   name: '',
@@ -137,11 +140,13 @@ async function syncXUINodes() {
   }
 }
 function resetSourceForm() {
+  sourceAuthType.value = 'password';
   sourceForm.value = {
     name: '',
     host: '',
     sshPort: 22,
     username: 'root',
+    authType: 'password',
     password: '',
     privateKey: '',
     xuiDbPath: '/etc/x-ui/x-ui.db',
@@ -159,18 +164,28 @@ async function getXUISources() {
 }
 async function openSourceDialog() {
   SourceDialog.value = true;
+  showSourceAdvanced.value = false;
+  sourceAuthType.value = 'password';
   await getXUISources();
 }
 function editXUISource(row: any) {
+  sourceAuthType.value = row.authType || (row.hasPrivateKey && !row.hasPassword ? 'privateKey' : 'password');
   sourceForm.value = {
     ...row,
+    authType: sourceAuthType.value,
     password: '',
     privateKey: '',
   };
 }
 async function saveXUISource() {
   try {
-    await SaveXUISource(sourceForm.value);
+    const payload = {
+      ...sourceForm.value,
+      authType: sourceAuthType.value,
+      password: sourceAuthType.value === 'password' ? sourceForm.value.password : '',
+      privateKey: sourceAuthType.value === 'privateKey' ? sourceForm.value.privateKey : '',
+    };
+    await SaveXUISource(payload);
     ElMessage.success('VPS 源已保存');
     resetSourceForm();
     await getXUISources();
@@ -613,50 +628,69 @@ watch(activeName, (newVal) => {
       </el-col>
     </el-row>
     <el-row :gutter="12">
-      <el-col :span="8">
+      <el-col :span="6">
         <el-form-item label="用户名">
           <el-input v-model="sourceForm.username" />
         </el-form-item>
       </el-col>
-      <el-col :span="8">
+      <el-col :span="6">
+        <el-form-item label="认证方式">
+          <el-radio-group v-model="sourceAuthType">
+            <el-radio-button label="password">账号密码</el-radio-button>
+            <el-radio-button label="privateKey">私钥</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+      </el-col>
+      <el-col :span="12" v-if="sourceAuthType === 'password'">
         <el-form-item label="密码">
           <el-input v-model="sourceForm.password" type="password" show-password placeholder="留空则保留原密码" />
         </el-form-item>
       </el-col>
-      <el-col :span="8">
-        <el-form-item label="x-ui DB">
-          <el-input v-model="sourceForm.xuiDbPath" />
+      <el-col :span="12" v-if="sourceAuthType === 'privateKey'">
+        <el-form-item label="私钥">
+          <el-input v-model="sourceForm.privateKey" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="留空则保留原私钥" />
         </el-form-item>
       </el-col>
     </el-row>
-    <el-row :gutter="12">
-      <el-col :span="8">
-        <el-form-item label="订阅 Base">
-          <el-input v-model="sourceForm.subBaseUrl" />
-        </el-form-item>
-      </el-col>
-      <el-col :span="6">
-        <el-form-item label="订阅路径">
-          <el-input v-model="sourceForm.subPath" />
-        </el-form-item>
-      </el-col>
-      <el-col :span="5">
-        <el-form-item label="分组">
-          <el-input v-model="sourceForm.groupName" placeholder="默认同名称" />
-        </el-form-item>
-      </el-col>
-      <el-col :span="5">
-        <el-form-item label="名称前缀">
-          <el-input v-model="sourceForm.namePrefix" placeholder="[圣何塞] " />
-        </el-form-item>
-      </el-col>
-    </el-row>
-    <el-form-item label="私钥">
-      <el-input v-model="sourceForm.privateKey" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" placeholder="可选，留空则保留原私钥" />
-    </el-form-item>
-    <el-form-item label="删除缺失节点">
-      <el-switch v-model="sourceForm.deleteMissing" />
-    </el-form-item>
+    <el-button text type="primary" @click="showSourceAdvanced = !showSourceAdvanced">
+      {{ showSourceAdvanced ? '收起高级选项' : '高级选项' }}
+    </el-button>
+    <template v-if="showSourceAdvanced">
+      <el-row :gutter="12">
+        <el-col :span="8">
+          <el-form-item label="x-ui DB">
+            <el-input v-model="sourceForm.xuiDbPath" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="订阅 Base">
+            <el-input v-model="sourceForm.subBaseUrl" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="订阅路径">
+            <el-input v-model="sourceForm.subPath" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="12">
+        <el-col :span="8">
+          <el-form-item label="分组">
+            <el-input v-model="sourceForm.groupName" placeholder="默认同名称" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="名称前缀">
+            <el-input v-model="sourceForm.namePrefix" placeholder="[圣何塞] " />
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="删除缺失节点">
+            <el-switch v-model="sourceForm.deleteMissing" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+    </template>
     <el-button type="primary" @click="saveXUISource">保存 VPS 源</el-button>
     <el-button @click="resetSourceForm">清空表单</el-button>
     <el-button type="success" @click="syncAllXUISources">同步全部启用源</el-button>
