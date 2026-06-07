@@ -92,6 +92,34 @@ Thank you for your attention and support!
 
 Feel free to adjust any details as needed!
 
+## Multi 3x-ui VPS central sync
+
+This fork can run SublinkX as a central subscription manager and import nodes from multiple remote 3x-ui VPS servers over SSH.
+
+One-command Docker deploy:
+
+```bash
+mkdir -p sublinkx && cd sublinkx && \
+curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xui-sources-docker/docker-compose.multi-xui.yml -o docker-compose.yml && \
+docker compose up -d
+```
+
+Open `http://SERVER_IP:8000`, then use:
+
+```text
+节点管理 -> VPS 源管理
+```
+
+Add each remote 3x-ui VPS source, sync it, and then manually choose nodes to build unified subscriptions.
+
+More details: [docs/multi-xui-docker.md](docs/multi-xui-docker.md)
+
+Docker image:
+
+```text
+ghcr.io/wangxvwei/sublinkx:feature-multi-xui-sources-docker
+```
+
 ## Stargazers over time
 [![Stargazers over time](https://starchart.cc/gooaclok819/sublinkX.svg?variant=adaptive)](https://starchart.cc/gooaclok819/sublinkX)
 

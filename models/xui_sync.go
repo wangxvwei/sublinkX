@@ -54,6 +54,20 @@ type XUISkippedNode struct {
 	Reason string `json:"reason"`
 }
 
+type XUINodeLink struct {
+	Name      string `json:"name"`
+	Link      string `json:"link"`
+	SubID     string `json:"subId"`
+	SourceKey string `json:"sourceKey"`
+}
+
+type XUINodeLinkOptions struct {
+	SourceName    string
+	GroupName     string
+	NamePrefix    string
+	DeleteMissing bool
+}
+
 type xuiInbound struct {
 	ID       int
 	Enable   int
@@ -100,13 +114,11 @@ func SyncXUINodes(opts XUISyncOptions) (XUISyncResult, error) {
 		return result, err
 	}
 
-	seen := map[string]bool{}
-	usedNames := map[string]int{}
 	subCache := map[string][]string{}
+	nodeLinks := []XUINodeLink{}
 
 	for _, client := range clients {
 		sourceKey := fmt.Sprintf("%s:%s", client.SourceKey(), client.SubID)
-		seen[sourceKey] = true
 
 		if client.SubID == "" {
 			result.Skipped++
@@ -144,13 +156,69 @@ func SyncXUINodes(opts XUISyncOptions) (XUISyncResult, error) {
 			continue
 		}
 
-		name := uniqueXUIName(opts.NamePrefix+client.DisplayName(), usedNames)
-		action, hash, err := upsertXUINode(name, link, sourceKey, client.SubID, opts.GroupName)
+		nodeLinks = append(nodeLinks, XUINodeLink{
+			Name:      client.DisplayName(),
+			Link:      link,
+			SubID:     client.SubID,
+			SourceKey: sourceKey,
+		})
+	}
+
+	written, err := UpsertXUINodeLinks(nodeLinks, XUINodeLinkOptions{
+		SourceName:    xuiNodeSource,
+		GroupName:     opts.GroupName,
+		NamePrefix:    opts.NamePrefix,
+		DeleteMissing: opts.DeleteMissing,
+	})
+	if err != nil {
+		return result, err
+	}
+	result.Created += written.Created
+	result.Updated += written.Updated
+	result.Unchanged += written.Unchanged
+	result.Deleted += written.Deleted
+	result.Nodes = append(result.Nodes, written.Nodes...)
+
+	return result, nil
+}
+
+func UpsertXUINodeLinks(nodeLinks []XUINodeLink, opts XUINodeLinkOptions) (XUISyncResult, error) {
+	var result XUISyncResult
+	if opts.SourceName == "" {
+		opts.SourceName = xuiNodeSource
+	}
+
+	seen := map[string]bool{}
+	usedNames := map[string]int{}
+	for _, nodeLink := range nodeLinks {
+		sourceKey := strings.TrimSpace(nodeLink.SourceKey)
+		if sourceKey == "" {
+			result.Skipped++
+			result.SkippedOn = append(result.SkippedOn, XUISkippedNode{
+				Name:   nodeLink.Name,
+				SubID:  nodeLink.SubID,
+				Reason: "empty source key",
+			})
+			continue
+		}
+		seen[sourceKey] = true
+		if strings.TrimSpace(nodeLink.Link) == "" {
+			result.Skipped++
+			result.SkippedOn = append(result.SkippedOn, XUISkippedNode{
+				Name:   nodeLink.Name,
+				SubID:  nodeLink.SubID,
+				Reason: "empty node link",
+			})
+			continue
+		}
+
+		name := uniqueXUIName(opts.NamePrefix+nodeLink.Name, usedNames)
+		action, hash, err := upsertXUINode(name, nodeLink.Link, opts.SourceName, sourceKey, nodeLink.SubID, opts.GroupName)
 		if err != nil {
 			result.Skipped++
 			result.SkippedOn = append(result.SkippedOn, XUISkippedNode{
 				Name:   name,
-				SubID:  client.SubID,
+				SubID:  nodeLink.SubID,
 				Reason: err.Error(),
 			})
 			continue
@@ -166,15 +234,15 @@ func SyncXUINodes(opts XUISyncOptions) (XUISyncResult, error) {
 		}
 		result.Nodes = append(result.Nodes, XUISyncedNode{
 			Name:      name,
-			SubID:     client.SubID,
+			SubID:     nodeLink.SubID,
 			SourceKey: sourceKey,
 			Action:    action,
 			Hash:      hash,
 		})
 	}
 
-	if opts.DeleteMissing {
-		deleted, err := deleteMissingXUINodes(seen)
+	if opts.DeleteMissing && len(seen) > 0 {
+		deleted, err := deleteMissingXUINodes(opts.SourceName, seen)
 		if err != nil {
 			return result, err
 		}
@@ -363,10 +431,10 @@ func uniqueXUIName(base string, used map[string]int) string {
 	return fmt.Sprintf("%s (%d)", base, used[base])
 }
 
-func upsertXUINode(name, link, sourceKey, subID, groupName string) (string, string, error) {
+func upsertXUINode(name, link, source, sourceKey, subID, groupName string) (string, string, error) {
 	hash := hashLink(link)
 	var existing Node
-	err := DB.Unscoped().Where("source = ? and source_key = ?", xuiNodeSource, sourceKey).First(&existing).Error
+	err := DB.Unscoped().Where("source = ? and source_key = ?", source, sourceKey).First(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		err = DB.Where("link = ?", link).First(&existing).Error
 	}
@@ -376,7 +444,7 @@ func upsertXUINode(name, link, sourceKey, subID, groupName string) (string, stri
 		existing = Node{
 			Name:      name,
 			Link:      link,
-			Source:    xuiNodeSource,
+			Source:    source,
 			SourceKey: sourceKey,
 			SubID:     subID,
 		}
@@ -387,11 +455,11 @@ func upsertXUINode(name, link, sourceKey, subID, groupName string) (string, stri
 	} else if err != nil {
 		return "", "", err
 	} else {
-		changed := existing.Name != name || existing.Link != link || existing.Source != xuiNodeSource || existing.SourceKey != sourceKey || existing.SubID != subID || existing.DeletedAt.Valid
+		changed := existing.Name != name || existing.Link != link || existing.Source != source || existing.SourceKey != sourceKey || existing.SubID != subID || existing.DeletedAt.Valid
 		if changed {
 			existing.Name = name
 			existing.Link = link
-			existing.Source = xuiNodeSource
+			existing.Source = source
 			existing.SourceKey = sourceKey
 			existing.SubID = subID
 			existing.DeletedAt = gorm.DeletedAt{}
@@ -415,9 +483,9 @@ func upsertXUINode(name, link, sourceKey, subID, groupName string) (string, stri
 	return action, hash, nil
 }
 
-func deleteMissingXUINodes(seen map[string]bool) (int, error) {
+func deleteMissingXUINodes(source string, seen map[string]bool) (int, error) {
 	var nodes []Node
-	if err := DB.Where("source = ?", xuiNodeSource).Find(&nodes).Error; err != nil {
+	if err := DB.Where("source = ?", source).Find(&nodes).Error; err != nil {
 		return 0, err
 	}
 	deleted := 0

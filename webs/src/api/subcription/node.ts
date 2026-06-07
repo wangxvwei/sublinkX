@@ -71,3 +71,40 @@ export function SyncXUINodes(data: any = {}){
     },
   });
 }
+
+export function GetXUISources(){
+  return request({
+    url: "/api/v1/xui-sources/get",
+    method: "get",
+  });
+}
+
+export function SaveXUISource(data: any){
+  return request({
+    url: "/api/v1/xui-sources/save",
+    method: "post",
+    data,
+  });
+}
+
+export function DelXUISource(data: any){
+  return request({
+    url: "/api/v1/xui-sources/delete",
+    method: "delete",
+    params: data,
+  });
+}
+
+export function SyncXUISource(id: number){
+  return request({
+    url: `/api/v1/xui-sources/${id}/sync`,
+    method: "post",
+  });
+}
+
+export function SyncAllXUISources(){
+  return request({
+    url: "/api/v1/xui-sources/sync-all",
+    method: "post",
+  });
+}

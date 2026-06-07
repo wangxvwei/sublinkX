@@ -85,6 +85,9 @@ func main() {
 	}
 	// 初始化数据库
 	models.InitSqlite()
+	if err := models.LoadXUISourcesFromEnv(); err != nil {
+		log.Println("load x-ui sources from env failed:", err)
+	}
 	// 获取命令行参数
 	args := os.Args
 	// 如果长度小于2则没有接收到任何参数
@@ -147,6 +150,7 @@ func Run(port int) {
 	routers.Mentus(r)
 	routers.Subcription(r)
 	routers.Nodes(r)
+	routers.XUISources(r)
 	routers.Clients(r)
 	routers.Total(r)
 	routers.Templates(r)

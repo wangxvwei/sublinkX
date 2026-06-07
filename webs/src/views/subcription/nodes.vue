@@ -1,7 +1,6 @@
 <script setup lang='ts'>
 import { ref,onMounted,nextTick  } from 'vue'
-import {getNodes,AddNodes,DelNode,UpdateNode,GetGroup,SetGroup,SyncXUINodes} from "@/api/subcription/node"
-import type { ElTable } from 'element-plus'
+import {getNodes,AddNodes,DelNode,UpdateNode,GetGroup,SetGroup,SyncXUINodes,GetXUISources,SaveXUISource,DelXUISource,SyncXUISource,SyncAllXUISources} from "@/api/subcription/node"
 
 interface GroupNode {
   ID: number;
@@ -23,9 +22,30 @@ interface NodeInfo {
     Link: string
     GroupName?: string[] // 分组名称
 }
+interface XUISource {
+  id?: number
+  name: string
+  host: string
+  sshPort: number
+  username: string
+  password?: string
+  privateKey?: string
+  xuiDbPath: string
+  subBaseUrl: string
+  subPath: string
+  groupName: string
+  namePrefix: string
+  deleteMissing: boolean
+  enabled: boolean
+  hasPassword?: boolean
+  hasPrivateKey?: boolean
+  lastSyncStatus?: string
+  lastSyncMessage?: string
+}
 onMounted(async() => {  // 页面开始执行函数
    getnodes()
    GetGroups()
+   getXUISources()
 })
 const dialogMode = ref<'add' | 'edit'>('add');
 
@@ -60,6 +80,23 @@ const SelectionNode = ref(''); // 选中的节点
 
 // const SelectionNodes = ref([]); // 选中的节点
 const RadioGroup = ref("1"); // 分组单选框
+const SourceDialog = ref(false);
+const sourceTableData = ref<XUISource[]>([]);
+const sourceForm = ref<XUISource>({
+  name: '',
+  host: '',
+  sshPort: 22,
+  username: 'root',
+  password: '',
+  privateKey: '',
+  xuiDbPath: '/etc/x-ui/x-ui.db',
+  subBaseUrl: 'https://127.0.0.1:2096',
+  subPath: 'dingyue',
+  groupName: '',
+  namePrefix: '',
+  deleteMissing: false,
+  enabled: true,
+});
 // 将所有输入的值清空
 function ClearInput() {
   SelectionNode.value = ''; // 清空选中的节点
@@ -97,6 +134,93 @@ async function syncXUINodes() {
   } catch (error) {
     console.error('3x-ui sync failed:', error);
     ElMessage.error('3x-ui sync failed');
+  }
+}
+function resetSourceForm() {
+  sourceForm.value = {
+    name: '',
+    host: '',
+    sshPort: 22,
+    username: 'root',
+    password: '',
+    privateKey: '',
+    xuiDbPath: '/etc/x-ui/x-ui.db',
+    subBaseUrl: 'https://127.0.0.1:2096',
+    subPath: 'dingyue',
+    groupName: '',
+    namePrefix: '',
+    deleteMissing: false,
+    enabled: true,
+  };
+}
+async function getXUISources() {
+  const { data } = await GetXUISources();
+  sourceTableData.value = Array.isArray(data) ? data : [];
+}
+async function openSourceDialog() {
+  SourceDialog.value = true;
+  await getXUISources();
+}
+function editXUISource(row: any) {
+  sourceForm.value = {
+    ...row,
+    password: '',
+    privateKey: '',
+  };
+}
+async function saveXUISource() {
+  try {
+    await SaveXUISource(sourceForm.value);
+    ElMessage.success('VPS 源已保存');
+    resetSourceForm();
+    await getXUISources();
+  } catch (error) {
+    console.error('save x-ui source failed:', error);
+    ElMessage.error('VPS 源保存失败');
+  }
+}
+async function deleteXUISource(row: any) {
+  if (!row.id) return;
+  try {
+    await ElMessageBox.confirm(`删除 VPS 源 ${row.name} ?`, '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    });
+    await DelXUISource({ id: row.id });
+    ElMessage.success('VPS 源已删除');
+    await getXUISources();
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('delete x-ui source failed:', error);
+      ElMessage.error('VPS 源删除失败');
+    }
+  }
+}
+async function syncXUISource(row: any) {
+  if (!row.id) return;
+  try {
+    const { data } = await SyncXUISource(row.id);
+    ElMessage.success(`${row.name}: +${data.created} / ~${data.updated} / =${data.unchanged}`);
+    await getnodes();
+    await GetGroups();
+    await getXUISources();
+  } catch (error) {
+    console.error('sync x-ui source failed:', error);
+    ElMessage.error(`${row.name} 同步失败`);
+    await getXUISources();
+  }
+}
+async function syncAllXUISources() {
+  try {
+    await SyncAllXUISources();
+    ElMessage.success('已同步全部启用的 VPS 源');
+    await getnodes();
+    await GetGroups();
+    await getXUISources();
+  } catch (error) {
+    console.error('sync all x-ui sources failed:', error);
+    ElMessage.error('同步全部 VPS 源失败');
   }
 }
 async function GetGroups() {
@@ -464,6 +588,102 @@ watch(activeName, (newVal) => {
   <el-button @click="Nodedialog = false">取消</el-button>
 </el-dialog>
 
+<el-dialog v-model="SourceDialog" title="VPS 源管理" width="92%">
+  <el-form :model="sourceForm" label-width="130px">
+    <el-row :gutter="12">
+      <el-col :span="8">
+        <el-form-item label="名称">
+          <el-input v-model="sourceForm.name" placeholder="圣何塞" />
+        </el-form-item>
+      </el-col>
+      <el-col :span="8">
+        <el-form-item label="主机">
+          <el-input v-model="sourceForm.host" placeholder="1.2.3.4" />
+        </el-form-item>
+      </el-col>
+      <el-col :span="4">
+        <el-form-item label="SSH 端口">
+          <el-input v-model.number="sourceForm.sshPort" />
+        </el-form-item>
+      </el-col>
+      <el-col :span="4">
+        <el-form-item label="启用">
+          <el-switch v-model="sourceForm.enabled" />
+        </el-form-item>
+      </el-col>
+    </el-row>
+    <el-row :gutter="12">
+      <el-col :span="8">
+        <el-form-item label="用户名">
+          <el-input v-model="sourceForm.username" />
+        </el-form-item>
+      </el-col>
+      <el-col :span="8">
+        <el-form-item label="密码">
+          <el-input v-model="sourceForm.password" type="password" show-password placeholder="留空则保留原密码" />
+        </el-form-item>
+      </el-col>
+      <el-col :span="8">
+        <el-form-item label="x-ui DB">
+          <el-input v-model="sourceForm.xuiDbPath" />
+        </el-form-item>
+      </el-col>
+    </el-row>
+    <el-row :gutter="12">
+      <el-col :span="8">
+        <el-form-item label="订阅 Base">
+          <el-input v-model="sourceForm.subBaseUrl" />
+        </el-form-item>
+      </el-col>
+      <el-col :span="6">
+        <el-form-item label="订阅路径">
+          <el-input v-model="sourceForm.subPath" />
+        </el-form-item>
+      </el-col>
+      <el-col :span="5">
+        <el-form-item label="分组">
+          <el-input v-model="sourceForm.groupName" placeholder="默认同名称" />
+        </el-form-item>
+      </el-col>
+      <el-col :span="5">
+        <el-form-item label="名称前缀">
+          <el-input v-model="sourceForm.namePrefix" placeholder="[圣何塞] " />
+        </el-form-item>
+      </el-col>
+    </el-row>
+    <el-form-item label="私钥">
+      <el-input v-model="sourceForm.privateKey" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" placeholder="可选，留空则保留原私钥" />
+    </el-form-item>
+    <el-form-item label="删除缺失节点">
+      <el-switch v-model="sourceForm.deleteMissing" />
+    </el-form-item>
+    <el-button type="primary" @click="saveXUISource">保存 VPS 源</el-button>
+    <el-button @click="resetSourceForm">清空表单</el-button>
+    <el-button type="success" @click="syncAllXUISources">同步全部启用源</el-button>
+  </el-form>
+  <el-table :data="sourceTableData" stripe style="width: 100%; margin-top: 16px">
+    <el-table-column prop="name" label="名称" />
+    <el-table-column prop="host" label="主机" />
+    <el-table-column prop="username" label="用户" />
+    <el-table-column prop="groupName" label="分组" />
+    <el-table-column label="认证">
+      <template #default="{row}">
+        <el-tag v-if="row.hasPassword" type="success">密码</el-tag>
+        <el-tag v-if="row.hasPrivateKey" type="info">私钥</el-tag>
+      </template>
+    </el-table-column>
+    <el-table-column prop="lastSyncStatus" label="状态" />
+    <el-table-column prop="lastSyncMessage" label="消息" show-overflow-tooltip />
+    <el-table-column label="操作" width="220">
+      <template #default="{row}">
+        <el-button link type="primary" @click="editXUISource(row)">编辑</el-button>
+        <el-button link type="success" @click="syncXUISource(row)">同步</el-button>
+        <el-button link type="danger" @click="deleteXUISource(row)">删除</el-button>
+      </template>
+    </el-table-column>
+  </el-table>
+</el-dialog>
+
 
   <!-- 显示表格数据 -->
   <el-card>
@@ -473,6 +693,7 @@ watch(activeName, (newVal) => {
     </el-tabs>
       <el-button type="primary" @click="handleAddNode">添加节点</el-button>
       <el-button type="success" @click="syncXUINodes">同步 3x-ui 节点</el-button>
+      <el-button type="warning" @click="openSourceDialog">VPS 源管理</el-button>
       <div style="margin-bottom: 10px"></div>
       <el-table
       ref="multipleTable"

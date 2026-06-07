@@ -1,0 +1,30 @@
+services:
+  sublinkx:
+    image: ghcr.io/wangxvwei/sublinkx:feature-multi-xui-sources-docker
+    container_name: sublinkx
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      TZ: Asia/Shanghai
+      # Optional: preload VPS sources on first boot.
+      # SUBLINK_XUI_SOURCES_JSON: >-
+      #   [
+      #     {
+      #       "name": "SanJose",
+      #       "host": "192.0.2.10",
+      #       "sshPort": 22,
+      #       "username": "root",
+      #       "password": "change-me",
+      #       "xuiDbPath": "/etc/x-ui/x-ui.db",
+      #       "subBaseUrl": "https://127.0.0.1:2096",
+      #       "subPath": "dingyue",
+      #       "groupName": "SanJose",
+      #       "namePrefix": "[SanJose] ",
+      #       "enabled": true
+      #     }
+      #   ]
+    volumes:
+      - ./db:/app/db
+      - ./logs:/app/logs
+      - ./template:/app/template
