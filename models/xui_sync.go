@@ -323,7 +323,7 @@ func fetchXUISubscription(baseURL, subPath, subID string) ([]string, error) {
 	client := http.Client{
 		Timeout: 15 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: insecureTLSConfig(),
 		},
 	}
 
@@ -438,6 +438,11 @@ func upsertXUINode(name, link, source, sourceKey, subID, groupName string) (stri
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		err = DB.Where("link = ?", link).First(&existing).Error
 	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = DB.Unscoped().
+			Where("source_key = ? and (source like ? or source like ?)", sourceKey, "3x-ui:%", "3x-ui-source:%").
+			First(&existing).Error
+	}
 
 	action := "unchanged"
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -471,16 +476,34 @@ func upsertXUINode(name, link, source, sourceKey, subID, groupName string) (stri
 	}
 
 	if groupName != "" {
-		group := GroupNode{Name: groupName}
-		if err := group.Add(); err != nil {
-			return "", "", err
-		}
-		if err := group.Ass(&existing); err != nil {
+		if err := replaceNodeGroup(&existing, groupName); err != nil {
 			return "", "", err
 		}
 	}
 
 	return action, hash, nil
+}
+
+func replaceNodeGroup(node *Node, groupName string) error {
+	groupName = strings.TrimSpace(groupName)
+	if groupName == "" {
+		return nil
+	}
+
+	var current Node
+	if err := DB.Preload("GroupNodes").First(&current, node.ID).Error; err != nil {
+		return err
+	}
+	oldGroups := current.GroupNodes
+
+	group := GroupNode{Name: groupName}
+	if err := DB.FirstOrCreate(&group, GroupNode{Name: groupName}).Error; err != nil {
+		return err
+	}
+	if err := DB.Model(&current).Association("GroupNodes").Replace(&group); err != nil {
+		return err
+	}
+	return IsGroupNotDel(oldGroups)
 }
 
 func deleteMissingXUINodes(source string, seen map[string]bool) (int, error) {
@@ -504,4 +527,8 @@ func deleteMissingXUINodes(source string, seen map[string]bool) (int, error) {
 func hashLink(link string) string {
 	sum := sha256.Sum256([]byte(link))
 	return hex.EncodeToString(sum[:])[:16]
+}
+
+func insecureTLSConfig() *tls.Config {
+	return &tls.Config{InsecureSkipVerify: true}
 }

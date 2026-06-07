@@ -94,7 +94,7 @@ Feel free to adjust any details as needed!
 
 ## Multi 3x-ui VPS central sync
 
-This fork can run SublinkX as a central subscription manager and import nodes from multiple remote 3x-ui VPS servers over SSH.
+This fork can run SublinkX as a central subscription manager and import nodes from multiple remote 3x-ui VPS servers.
 
 One-command Docker deploy:
 
@@ -117,7 +117,7 @@ INSTALL_DIR=/opt/sublinkx-test SERVICE_NAME=sublinkx-test SUBLINK_PORT=18000 \
 bash <(curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xui-sources-docker/scripts/install-non-docker.sh)
 ```
 
-Use Docker on your NAS for the real long-term deployment. The NAS only needs outbound SSH access to each 3x-ui VPS.
+Use Docker on your NAS for the real long-term deployment. Each source can be connected by SSH username/password or by a 3x-ui API Token.
 
 Open `http://SERVER_IP:8000`, then use:
 
@@ -125,7 +125,7 @@ Open `http://SERVER_IP:8000`, then use:
 节点管理 -> VPS 源管理
 ```
 
-Add each remote 3x-ui VPS source, sync it, and then manually choose nodes to build unified subscriptions.
+Add each remote 3x-ui VPS source, sync it, and then manually choose nodes to build unified subscriptions. When a source subscription returns `127.0.0.1`, `localhost`, or `::1`, SublinkX rewrites it to that source's public host so imported nodes remain usable from clients.
 
 More details: [docs/multi-xui-docker.md](docs/multi-xui-docker.md)
 

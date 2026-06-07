@@ -28,9 +28,10 @@ interface XUISource {
   host: string
   sshPort: number
   username: string
-  authType?: 'password' | 'privateKey'
+  authType?: 'password' | 'apiToken'
   password?: string
-  privateKey?: string
+  panelBaseUrl?: string
+  apiToken?: string
   xuiDbPath: string
   subBaseUrl: string
   subPath: string
@@ -39,7 +40,7 @@ interface XUISource {
   deleteMissing: boolean
   enabled: boolean
   hasPassword?: boolean
-  hasPrivateKey?: boolean
+  hasApiToken?: boolean
   lastSyncStatus?: string
   lastSyncMessage?: string
 }
@@ -83,7 +84,7 @@ const SelectionNode = ref(''); // 选中的节点
 const RadioGroup = ref("1"); // 分组单选框
 const SourceDialog = ref(false);
 const showSourceAdvanced = ref(false);
-const sourceAuthType = ref<'password' | 'privateKey'>('password');
+const sourceAuthType = ref<'password' | 'apiToken'>('password');
 const sourceTableData = ref<XUISource[]>([]);
 const sourceForm = ref<XUISource>({
   name: '',
@@ -91,7 +92,8 @@ const sourceForm = ref<XUISource>({
   sshPort: 22,
   username: 'root',
   password: '',
-  privateKey: '',
+  panelBaseUrl: '',
+  apiToken: '',
   xuiDbPath: '/etc/x-ui/x-ui.db',
   subBaseUrl: 'https://127.0.0.1:2096',
   subPath: 'dingyue',
@@ -118,13 +120,21 @@ function ClearInput() {
 }
 async function getnodes() {
   const {data} = await getNodes();
-  if (data.length > 0) tableDataTemp.value = tableData.value = data
-  allNodes.value = []; // 清空 allNodes 数组
-  data.forEach((item:any) => {
-      allNodes.value.push(item.Name); // 将所有节点添加到 allNodes 中
-  });
+  const nodes = Array.isArray(data) ? data : [];
+  tableDataTemp.value = nodes;
+  allNodes.value = nodes.map((item:any) => item.Name);
+  applyActiveGroupFilter();
   
 } 
+function applyActiveGroupFilter() {
+  if (activeName.value === '全部') {
+    tableData.value = tableDataTemp.value;
+    return;
+  }
+  tableData.value = tableDataTemp.value.filter(item => {
+    return item.GroupNodes?.some(group => group.Name === activeName.value);
+  });
+}
 async function syncXUINodes() {
   try {
     const { data } = await SyncXUINodes();
@@ -148,7 +158,8 @@ function resetSourceForm() {
     username: 'root',
     authType: 'password',
     password: '',
-    privateKey: '',
+    panelBaseUrl: '',
+    apiToken: '',
     xuiDbPath: '/etc/x-ui/x-ui.db',
     subBaseUrl: 'https://127.0.0.1:2096',
     subPath: 'dingyue',
@@ -169,12 +180,12 @@ async function openSourceDialog() {
   await getXUISources();
 }
 function editXUISource(row: any) {
-  sourceAuthType.value = row.authType || (row.hasPrivateKey && !row.hasPassword ? 'privateKey' : 'password');
+  sourceAuthType.value = row.authType === 'apiToken' ? 'apiToken' : 'password';
   sourceForm.value = {
     ...row,
     authType: sourceAuthType.value,
     password: '',
-    privateKey: '',
+    apiToken: '',
   };
 }
 async function saveXUISource() {
@@ -183,7 +194,12 @@ async function saveXUISource() {
       ...sourceForm.value,
       authType: sourceAuthType.value,
       password: sourceAuthType.value === 'password' ? sourceForm.value.password : '',
-      privateKey: sourceAuthType.value === 'privateKey' ? sourceForm.value.privateKey : '',
+      apiToken: sourceAuthType.value === 'apiToken' ? sourceForm.value.apiToken : '',
+      subBaseUrl: showSourceAdvanced.value ? sourceForm.value.subBaseUrl : '',
+      subPath: showSourceAdvanced.value ? sourceForm.value.subPath : '',
+      xuiDbPath: showSourceAdvanced.value ? sourceForm.value.xuiDbPath : '',
+      groupName: showSourceAdvanced.value ? sourceForm.value.groupName : '',
+      namePrefix: showSourceAdvanced.value ? sourceForm.value.namePrefix : '',
     };
     await SaveXUISource(payload);
     ElMessage.success('VPS 源已保存');
@@ -240,11 +256,12 @@ async function syncAllXUISources() {
 }
 async function GetGroups() {
   const {data} = await GetGroup();
-  if (Array.isArray(data) && data.length > 0) {
-  allGroupNames.value=data; // 将所有分组名称添加到 allGroupNames 中
-
-}
+  allGroupNames.value = Array.isArray(data) ? data : []; // 将所有分组名称添加到 allGroupNames 中
+  if (activeName.value !== '全部' && !allGroupNames.value.includes(activeName.value)) {
+    activeName.value = '全部';
+  }
   RadioGroup.value = allGroupNames.value.length > 0 ? "1" : "2"; // 自动选择单选框值
+  applyActiveGroupFilter();
   // console.log("单选框",RadioGroup.value);
   
 }
@@ -547,14 +564,8 @@ const handleSelectionChange = (val: Node[]) => {
   multipleSelection.value = val;
 };
 
-watch(activeName, (newVal) => {
-  if (newVal === '全部') {
-    tableData.value = tableDataTemp.value;
-  } else {
-    tableData.value = tableDataTemp.value.filter(item => {
-      return item.GroupNodes?.some(group => group.Name === newVal);
-    });
-  }
+watch(activeName, () => {
+  applyActiveGroupFilter();
 });
 
 
@@ -608,15 +619,20 @@ watch(activeName, (newVal) => {
     <el-row :gutter="12">
       <el-col :span="8">
         <el-form-item label="名称">
-          <el-input v-model="sourceForm.name" placeholder="圣何塞" />
+          <el-input v-model="sourceForm.name" placeholder="请输入 VPS 名称" />
         </el-form-item>
       </el-col>
-      <el-col :span="8">
+      <el-col :span="8" v-if="sourceAuthType === 'password'">
         <el-form-item label="主机">
           <el-input v-model="sourceForm.host" placeholder="1.2.3.4" />
         </el-form-item>
       </el-col>
-      <el-col :span="4">
+      <el-col :span="8" v-if="sourceAuthType === 'apiToken'">
+        <el-form-item label="面板地址">
+          <el-input v-model="sourceForm.panelBaseUrl" placeholder="https://panel.example.com:54321" />
+        </el-form-item>
+      </el-col>
+      <el-col :span="4" v-if="sourceAuthType === 'password'">
         <el-form-item label="SSH 端口">
           <el-input v-model.number="sourceForm.sshPort" />
         </el-form-item>
@@ -628,7 +644,7 @@ watch(activeName, (newVal) => {
       </el-col>
     </el-row>
     <el-row :gutter="12">
-      <el-col :span="6">
+      <el-col :span="6" v-if="sourceAuthType === 'password'">
         <el-form-item label="用户名">
           <el-input v-model="sourceForm.username" />
         </el-form-item>
@@ -637,18 +653,18 @@ watch(activeName, (newVal) => {
         <el-form-item label="认证方式">
           <el-radio-group v-model="sourceAuthType">
             <el-radio-button label="password">账号密码</el-radio-button>
-            <el-radio-button label="privateKey">私钥</el-radio-button>
+            <el-radio-button label="apiToken">API Token</el-radio-button>
           </el-radio-group>
         </el-form-item>
       </el-col>
       <el-col :span="12" v-if="sourceAuthType === 'password'">
         <el-form-item label="密码">
-          <el-input v-model="sourceForm.password" type="password" show-password placeholder="留空则保留原密码" />
+          <el-input v-model="sourceForm.password" type="password" show-password placeholder="编辑时留空则保留原密码" />
         </el-form-item>
       </el-col>
-      <el-col :span="12" v-if="sourceAuthType === 'privateKey'">
-        <el-form-item label="私钥">
-          <el-input v-model="sourceForm.privateKey" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="留空则保留原私钥" />
+      <el-col :span="12" v-if="sourceAuthType === 'apiToken'">
+        <el-form-item label="API Token">
+          <el-input v-model="sourceForm.apiToken" type="password" show-password placeholder="编辑时留空则保留原 Token" />
         </el-form-item>
       </el-col>
     </el-row>
@@ -657,7 +673,7 @@ watch(activeName, (newVal) => {
     </el-button>
     <template v-if="showSourceAdvanced">
       <el-row :gutter="12">
-        <el-col :span="8">
+        <el-col :span="8" v-if="sourceAuthType === 'password'">
           <el-form-item label="x-ui DB">
             <el-input v-model="sourceForm.xuiDbPath" />
           </el-form-item>
@@ -681,7 +697,7 @@ watch(activeName, (newVal) => {
         </el-col>
         <el-col :span="8">
           <el-form-item label="名称前缀">
-            <el-input v-model="sourceForm.namePrefix" placeholder="[圣何塞] " />
+            <el-input v-model="sourceForm.namePrefix" placeholder="默认使用 [VPS名称] " />
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -697,13 +713,16 @@ watch(activeName, (newVal) => {
   </el-form>
   <el-table :data="sourceTableData" stripe style="width: 100%; margin-top: 16px">
     <el-table-column prop="name" label="名称" />
-    <el-table-column prop="host" label="主机" />
-    <el-table-column prop="username" label="用户" />
-    <el-table-column prop="groupName" label="分组" />
-    <el-table-column label="认证">
+    <el-table-column label="地址">
       <template #default="{row}">
-        <el-tag v-if="row.hasPassword" type="success">密码</el-tag>
-        <el-tag v-if="row.hasPrivateKey" type="info">私钥</el-tag>
+        {{ row.authType === 'apiToken' ? row.panelBaseUrl : row.host }}
+      </template>
+    </el-table-column>
+    <el-table-column prop="groupName" label="分组" />
+    <el-table-column label="接入">
+      <template #default="{row}">
+        <el-tag v-if="row.authType === 'apiToken'" type="warning">API Token</el-tag>
+        <el-tag v-else type="success">账号密码</el-tag>
       </template>
     </el-table-column>
     <el-table-column prop="lastSyncStatus" label="状态" />

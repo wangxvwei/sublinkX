@@ -6,12 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/glebarez/sqlite"
 	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm"
 )
@@ -23,8 +27,11 @@ type XUISource struct {
 	Host            string
 	SSHPort         int
 	Username        string
+	AuthType        string
 	Password        string `json:"-"`
 	PrivateKey      string `json:"-"`
+	PanelBaseURL    string
+	APIToken        string `json:"-"`
 	XUIDBPath       string
 	SubBaseURL      string
 	SubPath         string
@@ -46,6 +53,8 @@ type XUISourceInput struct {
 	AuthType      string `json:"authType"`
 	Password      string `json:"password"`
 	PrivateKey    string `json:"privateKey"`
+	PanelBaseURL  string `json:"panelBaseUrl"`
+	APIToken      string `json:"apiToken"`
 	XUIDBPath     string `json:"xuiDbPath"`
 	SubBaseURL    string `json:"subBaseUrl"`
 	SubPath       string `json:"subPath"`
@@ -62,6 +71,7 @@ type XUISourceView struct {
 	SSHPort         int        `json:"sshPort"`
 	Username        string     `json:"username"`
 	AuthType        string     `json:"authType"`
+	PanelBaseURL    string     `json:"panelBaseUrl"`
 	XUIDBPath       string     `json:"xuiDbPath"`
 	SubBaseURL      string     `json:"subBaseUrl"`
 	SubPath         string     `json:"subPath"`
@@ -70,17 +80,14 @@ type XUISourceView struct {
 	DeleteMissing   bool       `json:"deleteMissing"`
 	Enabled         bool       `json:"enabled"`
 	HasPassword     bool       `json:"hasPassword"`
-	HasPrivateKey   bool       `json:"hasPrivateKey"`
+	HasAPIToken     bool       `json:"hasApiToken"`
 	LastSyncAt      *time.Time `json:"lastSyncAt"`
 	LastSyncStatus  string     `json:"lastSyncStatus"`
 	LastSyncMessage string     `json:"lastSyncMessage"`
 }
 
 func (s XUISource) View() XUISourceView {
-	authType := "password"
-	if s.PrivateKey != "" && s.Password == "" {
-		authType = "privateKey"
-	}
+	authType := s.normalizedAuthType()
 	return XUISourceView{
 		ID:              s.ID,
 		Name:            s.Name,
@@ -88,6 +95,7 @@ func (s XUISource) View() XUISourceView {
 		SSHPort:         s.SSHPort,
 		Username:        s.Username,
 		AuthType:        authType,
+		PanelBaseURL:    s.PanelBaseURL,
 		XUIDBPath:       s.XUIDBPath,
 		SubBaseURL:      s.SubBaseURL,
 		SubPath:         s.SubPath,
@@ -96,11 +104,25 @@ func (s XUISource) View() XUISourceView {
 		DeleteMissing:   s.DeleteMissing,
 		Enabled:         s.Enabled,
 		HasPassword:     s.Password != "",
-		HasPrivateKey:   s.PrivateKey != "",
+		HasAPIToken:     s.APIToken != "",
 		LastSyncAt:      s.LastSyncAt,
 		LastSyncStatus:  s.LastSyncStatus,
 		LastSyncMessage: s.LastSyncMessage,
 	}
+}
+
+func (s XUISource) normalizedAuthType() string {
+	authType := strings.TrimSpace(s.AuthType)
+	if authType == "" {
+		if s.APIToken != "" {
+			return "apiToken"
+		}
+		return "password"
+	}
+	if authType == "apiToken" {
+		return "apiToken"
+	}
+	return "password"
 }
 
 func ListXUISources() ([]XUISourceView, error) {
@@ -121,12 +143,22 @@ func SaveXUISource(input XUISourceInput) (XUISourceView, error) {
 		if err := DB.First(&source, input.ID).Error; err != nil {
 			return XUISourceView{}, err
 		}
+	} else {
+		name := strings.TrimSpace(input.Name)
+		if name != "" {
+			var existing XUISource
+			if err := DB.Unscoped().Where("name = ?", name).First(&existing).Error; err == nil {
+				source = existing
+				source.DeletedAt = gorm.DeletedAt{}
+			}
+		}
 	}
 
 	source.Name = strings.TrimSpace(input.Name)
 	source.Host = strings.TrimSpace(input.Host)
 	source.SSHPort = input.SSHPort
 	source.Username = strings.TrimSpace(input.Username)
+	source.PanelBaseURL = strings.TrimRight(strings.TrimSpace(input.PanelBaseURL), "/")
 	source.XUIDBPath = strings.TrimSpace(input.XUIDBPath)
 	source.SubBaseURL = strings.TrimSpace(input.SubBaseURL)
 	source.SubPath = strings.Trim(input.SubPath, "/ ")
@@ -141,7 +173,11 @@ func SaveXUISource(input XUISourceInput) (XUISourceView, error) {
 		source.XUIDBPath = "/etc/x-ui/x-ui.db"
 	}
 	if source.SubBaseURL == "" {
-		source.SubBaseURL = "https://127.0.0.1:2096"
+		if strings.TrimSpace(input.AuthType) == "apiToken" && source.PanelBaseURL != "" {
+			source.SubBaseURL = source.PanelBaseURL
+		} else {
+			source.SubBaseURL = "https://127.0.0.1:2096"
+		}
 	}
 	if source.SubPath == "" {
 		source.SubPath = "dingyue"
@@ -154,10 +190,7 @@ func SaveXUISource(input XUISourceInput) (XUISourceView, error) {
 	}
 	authType := strings.TrimSpace(input.AuthType)
 	if authType == "" {
-		authType = "password"
-		if strings.TrimSpace(input.PrivateKey) != "" {
-			authType = "privateKey"
-		}
+		authType = source.normalizedAuthType()
 	}
 	switch authType {
 	case "password":
@@ -165,19 +198,35 @@ func SaveXUISource(input XUISourceInput) (XUISourceView, error) {
 			source.Password = input.Password
 		}
 		source.PrivateKey = ""
-	case "privateKey":
-		if strings.TrimSpace(input.PrivateKey) != "" {
-			source.PrivateKey = input.PrivateKey
+		source.APIToken = ""
+	case "apiToken":
+		if strings.TrimSpace(input.APIToken) != "" {
+			source.APIToken = strings.TrimSpace(input.APIToken)
 		}
 		source.Password = ""
+		source.PrivateKey = ""
 	default:
-		return XUISourceView{}, errors.New("authType must be password or privateKey")
+		return XUISourceView{}, errors.New("authType must be password or apiToken")
 	}
-	if source.Name == "" || source.Host == "" || source.Username == "" {
-		return XUISourceView{}, errors.New("name, host and username are required")
+	source.AuthType = authType
+	if source.Name == "" {
+		return XUISourceView{}, errors.New("name is required")
 	}
-	if source.Password == "" && source.PrivateKey == "" {
-		return XUISourceView{}, errors.New("password or private key is required")
+	if authType == "password" {
+		if source.Host == "" || source.Username == "" {
+			return XUISourceView{}, errors.New("host and username are required")
+		}
+		if source.Password == "" {
+			return XUISourceView{}, errors.New("password is required")
+		}
+	}
+	if authType == "apiToken" {
+		if source.PanelBaseURL == "" {
+			return XUISourceView{}, errors.New("panel base url is required")
+		}
+		if source.APIToken == "" {
+			return XUISourceView{}, errors.New("api token is required")
+		}
 	}
 
 	if source.ID == 0 {
@@ -193,7 +242,7 @@ func SaveXUISource(input XUISourceInput) (XUISourceView, error) {
 }
 
 func DeleteXUISource(id int) error {
-	return DB.Delete(&XUISource{}, id).Error
+	return DB.Unscoped().Delete(&XUISource{}, id).Error
 }
 
 func SyncXUISourceByID(id int) (XUISyncResult, error) {
@@ -251,15 +300,64 @@ func (s XUISource) Sync() (XUISyncResult, error) {
 	if err != nil {
 		return XUISyncResult{}, err
 	}
+	nodes = rewriteLocalhostNodeLinks(nodes, s.publicHost())
 	return UpsertXUINodeLinks(nodes, XUINodeLinkOptions{
-		SourceName:    "3x-ui:" + s.Name,
+		SourceName:    fmt.Sprintf("3x-ui-source:%d", s.ID),
 		GroupName:     s.GroupName,
 		NamePrefix:    s.NamePrefix,
 		DeleteMissing: s.DeleteMissing,
 	})
 }
 
+func (s XUISource) publicHost() string {
+	if strings.TrimSpace(s.Host) != "" {
+		return strings.TrimSpace(s.Host)
+	}
+	if strings.TrimSpace(s.PanelBaseURL) == "" {
+		return ""
+	}
+	parsed, err := url.Parse(s.PanelBaseURL)
+	if err != nil {
+		return ""
+	}
+	return parsed.Hostname()
+}
+
+func rewriteLocalhostNodeLinks(nodes []XUINodeLink, publicHost string) []XUINodeLink {
+	publicHost = strings.TrimSpace(publicHost)
+	if publicHost == "" {
+		return nodes
+	}
+	for i := range nodes {
+		link, ok := rewriteLocalhostNodeLink(nodes[i].Link, publicHost)
+		if ok {
+			nodes[i].Link = link
+		}
+	}
+	return nodes
+}
+
+func rewriteLocalhostNodeLink(link, publicHost string) (string, bool) {
+	parsed, err := url.Parse(link)
+	if err != nil || parsed.Host == "" {
+		return link, false
+	}
+	host := strings.Trim(strings.ToLower(parsed.Hostname()), "[]")
+	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
+		return link, false
+	}
+	if port := parsed.Port(); port != "" {
+		parsed.Host = net.JoinHostPort(publicHost, port)
+	} else {
+		parsed.Host = publicHost
+	}
+	return parsed.String(), true
+}
+
 func (s XUISource) fetchRemoteNodes() ([]XUINodeLink, error) {
+	if s.normalizedAuthType() == "apiToken" {
+		return s.fetchAPINodes()
+	}
 	client, err := s.sshClient()
 	if err != nil {
 		return nil, err
@@ -295,6 +393,291 @@ func (s XUISource) fetchRemoteNodes() ([]XUINodeLink, error) {
 		return nil, errors.New(remote.Error)
 	}
 	return remote.Nodes, nil
+}
+
+type xuiAPIResponse struct {
+	Success bool            `json:"success"`
+	Msg     string          `json:"msg"`
+	Obj     json.RawMessage `json:"obj"`
+}
+
+type xuiAPIInbound struct {
+	ID       int             `json:"id"`
+	Enable   any             `json:"enable"`
+	Settings json.RawMessage `json:"settings"`
+}
+
+func (s XUISource) fetchAPINodes() ([]XUINodeLink, error) {
+	panelBaseURL := strings.TrimRight(s.PanelBaseURL, "/")
+	if panelBaseURL == "" {
+		return nil, errors.New("missing panel base url")
+	}
+	inbounds, err := s.fetchAPIInbounds(panelBaseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	subBaseURL := strings.TrimRight(s.SubBaseURL, "/")
+	subPath := strings.Trim(s.SubPath, "/ ")
+	if subBaseURL == "" || subBaseURL == panelBaseURL || subPath == "" {
+		detectedBaseURL, detectedPath, err := s.detectAPISubscriptionSettings(panelBaseURL)
+		if err == nil {
+			if subBaseURL == "" || subBaseURL == panelBaseURL {
+				subBaseURL = detectedBaseURL
+			}
+			if subPath == "" || subPath == "dingyue" {
+				subPath = detectedPath
+			}
+		}
+	}
+	if subBaseURL == "" {
+		subBaseURL = panelOriginURL(panelBaseURL)
+	}
+	if subPath == "" {
+		subPath = "dingyue"
+	}
+
+	subCache := map[string][]string{}
+	nodes := []XUINodeLink{}
+	clientsSeen := 0
+	var lastSubscriptionErr error
+	for _, inbound := range inbounds {
+		if !isXUIInboundEnabled(inbound.Enable) {
+			continue
+		}
+		settings, err := parseXUIInboundSettings(inbound.Settings)
+		if err != nil {
+			continue
+		}
+		for _, client := range settings.Clients {
+			client.ID = strings.TrimSpace(client.ID)
+			client.Email = strings.TrimSpace(client.Email)
+			client.SubID = strings.TrimSpace(client.SubID)
+			if client.ID == "" || client.SubID == "" {
+				continue
+			}
+			clientsSeen++
+			links, ok := subCache[client.SubID]
+			if !ok {
+				links, err = fetchXUISubscription(subBaseURL, subPath, client.SubID)
+				if err != nil {
+					lastSubscriptionErr = err
+					subCache[client.SubID] = []string{}
+					continue
+				}
+				subCache[client.SubID] = links
+			}
+			entry := xuiClientEntry{
+				InboundID: inbound.ID,
+				ID:        client.ID,
+				Email:     client.Email,
+				SubID:     client.SubID,
+			}
+			link := findClientLink(links, entry)
+			if link == "" {
+				continue
+			}
+			nodes = append(nodes, XUINodeLink{
+				Name:      entry.DisplayName(),
+				Link:      link,
+				SubID:     client.SubID,
+				SourceKey: fmt.Sprintf("%s:%s", entry.SourceKey(), client.SubID),
+			})
+		}
+	}
+	if len(nodes) == 0 && clientsSeen > 0 {
+		if lastSubscriptionErr != nil {
+			return nil, fmt.Errorf("found %d x-ui clients but no subscription links were fetched from %s/%s: %w", clientsSeen, subBaseURL, subPath, lastSubscriptionErr)
+		}
+		return nil, fmt.Errorf("found %d x-ui clients but no matching subscription links were found from %s/%s", clientsSeen, subBaseURL, subPath)
+	}
+	return nodes, nil
+}
+
+func isXUIInboundEnabled(value any) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case float64:
+		return v != 0
+	case string:
+		v = strings.TrimSpace(strings.ToLower(v))
+		return v == "true" || v == "1"
+	case nil:
+		return true
+	default:
+		return true
+	}
+}
+
+func (s XUISource) fetchAPIInbounds(panelBaseURL string) ([]xuiAPIInbound, error) {
+	endpoint, err := joinPanelAPIURL(panelBaseURL, "/panel/api/inbounds/list")
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+s.APIToken)
+	req.Header.Set("Accept", "application/json")
+	client := http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: insecureTLSConfig(),
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("3x-ui api returned %s", resp.Status)
+	}
+	var apiResp xuiAPIResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("parse 3x-ui api response failed: %w", err)
+	}
+	if !apiResp.Success {
+		if strings.TrimSpace(apiResp.Msg) != "" {
+			return nil, errors.New(apiResp.Msg)
+		}
+		return nil, errors.New("3x-ui api returned success=false")
+	}
+	var inbounds []xuiAPIInbound
+	if err := json.Unmarshal(apiResp.Obj, &inbounds); err != nil {
+		return nil, fmt.Errorf("parse 3x-ui inbounds failed: %w", err)
+	}
+	return inbounds, nil
+}
+
+func (s XUISource) detectAPISubscriptionSettings(panelBaseURL string) (string, string, error) {
+	endpoint, err := joinPanelAPIURL(panelBaseURL, "/panel/api/server/getDb")
+	if err != nil {
+		return "", "", err
+	}
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+s.APIToken)
+	client := http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: insecureTLSConfig(),
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", "", fmt.Errorf("3x-ui getDb returned %s", resp.Status)
+	}
+	if !bytes.HasPrefix(body, []byte("SQLite format 3")) {
+		return "", "", errors.New("3x-ui getDb did not return a sqlite database")
+	}
+
+	tmp, err := os.CreateTemp("", "sublink-xui-*.db")
+	if err != nil {
+		return "", "", err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if _, err := tmp.Write(body); err != nil {
+		tmp.Close()
+		return "", "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", "", err
+	}
+
+	xuiDB, err := gorm.Open(sqlite.Open(tmpPath), &gorm.Config{})
+	if err != nil {
+		return "", "", err
+	}
+	subEnable := strings.TrimSpace(strings.ToLower(readXUISetting(xuiDB, "subEnable")))
+	if subEnable == "false" || subEnable == "0" {
+		return "", "", errors.New("3x-ui subscription is disabled")
+	}
+	subPath := readXUISetting(xuiDB, "subPath")
+	if subPath == "" {
+		subPath = "dingyue"
+	}
+	subPort := readXUISetting(xuiDB, "subPort")
+	subBaseURL := panelOriginURL(panelBaseURL)
+	if subPort != "" {
+		subBaseURL = panelOriginURLWithPort(panelBaseURL, subPort)
+	}
+	return subBaseURL, subPath, nil
+}
+
+func parseXUIInboundSettings(raw json.RawMessage) (xuiInboundSettings, error) {
+	var settings xuiInboundSettings
+	if len(raw) == 0 || string(raw) == "null" {
+		return settings, nil
+	}
+	if raw[0] == '"' {
+		var text string
+		if err := json.Unmarshal(raw, &text); err != nil {
+			return settings, err
+		}
+		err := json.Unmarshal([]byte(text), &settings)
+		return settings, err
+	}
+	err := json.Unmarshal(raw, &settings)
+	return settings, err
+}
+
+func joinPanelAPIURL(baseURL, apiPath string) (string, error) {
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", errors.New("panel base url must include scheme and host")
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + apiPath
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func panelOriginURL(baseURL string) string {
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return strings.TrimRight(baseURL, "/")
+	}
+	parsed.Path = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "/")
+}
+
+func panelOriginURLWithPort(baseURL, port string) string {
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return strings.TrimRight(baseURL, "/")
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return panelOriginURL(baseURL)
+	}
+	parsed.Host = net.JoinHostPort(host, strings.TrimSpace(port))
+	parsed.Path = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "/")
 }
 
 func (s XUISource) sshClient() (*ssh.Client, error) {
