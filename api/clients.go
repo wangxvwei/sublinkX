@@ -56,11 +56,19 @@ func findSubscriptionByToken(token string) (models.Subcription, bool) {
 		return models.Subcription{}, false
 	}
 	for _, sub := range list {
-		if Md5(sub.Name) == token {
+		if subscriptionToken(sub) == token {
 			return sub, true
 		}
 	}
 	return models.Subcription{}, false
+}
+
+func subscriptionToken(sub models.Subcription) string {
+	token := strings.ToLower(strings.TrimSpace(sub.Token))
+	if token != "" {
+		return token
+	}
+	return strings.ToLower(Md5(sub.Name))
 }
 
 func normalizeClient(queryClient, userAgent string) string {

@@ -19,6 +19,7 @@ import { getTemp } from "@/api/subcription/temp";
 interface Sub {
   ID: number;
   Name: string;
+  Token?: string;
   Config: string | Config;
   Nodes: Node[];
   NodeOrder?: string;
@@ -69,6 +70,7 @@ const qrDialogVisible = ref(false);
 const logsDialogVisible = ref(false);
 const dialogTitle = ref("添加订阅");
 const subName = ref("");
+const subToken = ref("");
 const oldSubName = ref("");
 const clashTemplate = ref("./template/clash.yaml");
 const surgeTemplate = ref("./template/surge.conf");
@@ -115,6 +117,7 @@ async function loadTemplates() {
 function openAddDialog() {
   dialogTitle.value = "添加订阅";
   subName.value = "";
+  subToken.value = generateSubscriptionToken();
   oldSubName.value = "";
   selectedNodeNames.value = [];
   enabledOptions.value = ["udp"];
@@ -129,6 +132,7 @@ function openEditDialog(row: Sub | any) {
   const config = parseConfig(row.Config);
   dialogTitle.value = "编辑订阅";
   subName.value = row.Name;
+  subToken.value = getSubscriptionToken(row);
   oldSubName.value = row.Name;
   selectedNodeNames.value = row.Nodes?.map((item: Node) => item.Name) ?? [];
   enabledOptions.value = [];
@@ -150,6 +154,7 @@ async function persistSubscriptionOrder(row: Sub | any) {
       config: typeof row.Config === "string" ? row.Config : JSON.stringify(row.Config),
       name: row.Name,
       oldname: row.Name,
+      token: getSubscriptionToken(row),
       nodes: nodeNames.join(","),
     });
     ElMessage.success("节点顺序已保存");
@@ -170,6 +175,11 @@ async function submitSubscription() {
     ElMessage.warning("请至少选择一个节点");
     return;
   }
+  const token = subToken.value.trim().toLowerCase();
+  if (!isValidSubscriptionToken(token)) {
+    ElMessage.warning("订阅链接标识只能包含 6-64 位小写字母、数字、下划线和短横线");
+    return;
+  }
 
   const config: Config = {
     clash: clashTemplate.value.trim(),
@@ -183,6 +193,7 @@ async function submitSubscription() {
       await AddSub({
         config: JSON.stringify(config),
         name: subName.value.trim(),
+        token,
         nodes: selectedNodeNames.value.join(","),
       });
       ElMessage.success("订阅已添加");
@@ -191,6 +202,7 @@ async function submitSubscription() {
         config: JSON.stringify(config),
         name: subName.value.trim(),
         oldname: oldSubName.value,
+        token,
         nodes: selectedNodeNames.value.join(","),
       });
       ElMessage.success("订阅已更新");
@@ -262,12 +274,38 @@ function showLogs(row: Sub | any) {
 }
 
 function showClientLinks(row: Sub | any) {
-  const baseUrl = `${location.protocol}//${location.host}/c/?token=${md5(row.Name)}`;
+  const baseUrl = `${location.protocol}//${location.host}/c/?token=${encodeURIComponent(getSubscriptionToken(row))}`;
   clientUrls.value = clientOptions.reduce<Record<string, string>>((result, option) => {
     result[option.key] = option.param ? `${baseUrl}&client=${option.param}` : baseUrl;
     return result;
   }, {});
   clientDialogVisible.value = true;
+}
+
+function getSubscriptionToken(row: Sub | any) {
+  return String(row.Token || row.token || md5(row.Name)).trim().toLowerCase();
+}
+
+function generateSubscriptionToken() {
+  const bytes = new Uint8Array(8);
+  if (window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(bytes);
+  } else {
+    bytes.forEach((_, index) => {
+      bytes[index] = Math.floor(Math.random() * 256);
+    });
+  }
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function resetSubscriptionToken() {
+  subToken.value = generateSubscriptionToken();
+}
+
+function isValidSubscriptionToken(token: string) {
+  return /^[a-z0-9_-]{6,64}$/.test(token);
 }
 
 function showQr(title: string, url: string) {
@@ -363,7 +401,10 @@ function formatDate(row: Sub | any) {
         </el-table-column>
         <el-table-column prop="Name" label="订阅名称" min-width="180">
           <template #default="{ row }">
-            <el-tag effect="plain">{{ row.Name }}</el-tag>
+            <div class="sub-name-cell">
+              <el-tag effect="plain">{{ row.Name }}</el-tag>
+              <span class="token-line">标识：{{ getSubscriptionToken(row) }}</span>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="节点数量" width="110">
@@ -408,6 +449,21 @@ function formatDate(row: Sub | any) {
       <el-form label-position="top">
         <el-form-item label="订阅名称">
           <el-input v-model="subName" placeholder="例如：全部节点" />
+        </el-form-item>
+
+        <el-form-item label="订阅链接标识">
+          <div class="token-editor">
+            <el-input
+              v-model="subToken"
+              maxlength="64"
+              placeholder="用于生成订阅链接，可手动修改"
+              @input="subToken = subToken.trim().toLowerCase()"
+            />
+            <el-button @click="resetSubscriptionToken">生成新链接</el-button>
+          </div>
+          <div class="sort-helper">
+            修改后新的客户端订阅地址会变化，旧地址将不再指向这个订阅。
+          </div>
         </el-form-item>
 
         <el-form-item label="Clash / Mihomo 模板">
@@ -677,9 +733,32 @@ function formatDate(row: Sub | any) {
   margin-top: 16px;
 }
 
+.sub-name-cell {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.token-line {
+  max-width: 260px;
+  overflow: hidden;
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .full-width {
   width: 100%;
   margin-top: 10px;
+}
+
+.token-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  width: 100%;
 }
 
 .node-order {
@@ -800,7 +879,8 @@ function formatDate(row: Sub | any) {
 @media (max-width: 760px) {
   .page-header,
   .table-footer,
-  .client-row {
+  .client-row,
+  .token-editor {
     display: block;
   }
 
@@ -814,7 +894,8 @@ function formatDate(row: Sub | any) {
 
   .page-header .el-button,
   .batch-actions,
-  .client-actions {
+  .client-actions,
+  .token-editor .el-button {
     margin-top: 12px;
   }
 }

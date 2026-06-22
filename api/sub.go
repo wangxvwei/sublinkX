@@ -5,7 +5,11 @@ package api
 import (
 	// 导入 json 包，用于解析 config 字符串
 
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 	"sublink/models" // 导入 models 包
@@ -50,6 +54,7 @@ func SubGet(c *gin.Context) {
 // 添加订阅
 func SubAdd(c *gin.Context) {
 	name := c.PostForm("name")
+	token := c.PostForm("token")
 	configs := c.PostForm("config") // 这里的 configString 是前端传来的 JSON 字符串
 	nodes := c.PostForm("nodes")
 
@@ -57,6 +62,15 @@ func SubAdd(c *gin.Context) {
 		c.JSON(400, gin.H{
 			"msg": "订阅名称或节点不能为空",
 		})
+		return
+	}
+	normalizedToken, err := normalizeSubscriptionToken(name, token)
+	if err != nil {
+		c.JSON(400, gin.H{"msg": err.Error()})
+		return
+	}
+	if err := ensureSubscriptionTokenAvailable(normalizedToken, 0); err != nil {
+		c.JSON(400, gin.H{"msg": err.Error()})
 		return
 	}
 
@@ -85,12 +99,13 @@ func SubAdd(c *gin.Context) {
 	}
 	sub := models.Subcription{
 		Name:      name,
+		Token:     normalizedToken,
 		Config:    configs,   // 这里直接赋值字符串
 		NodeOrder: nodes,     // 这里直接赋值字符串
 		Nodes:     NodesData, // 这里直接赋值 nodes 数组
 
 	}
-	err := sub.Add()
+	err = sub.Add()
 	if err != nil {
 		c.JSON(400, gin.H{
 			"msg": "添加订阅失败: " + err.Error(),
@@ -108,6 +123,7 @@ func SubAdd(c *gin.Context) {
 func SubUpdate(c *gin.Context) {
 	NewName := c.PostForm("name")
 	OldName := c.PostForm("oldname")
+	token := c.PostForm("token")
 	configs := c.PostForm("config") // 这里的 configString 是前端传来的 JSON 字符串
 	nodes := c.PostForm("nodes")
 
@@ -115,6 +131,30 @@ func SubUpdate(c *gin.Context) {
 		c.JSON(400, gin.H{
 			"msg": "订阅名称或节点不能为空",
 		})
+		return
+	}
+	OldSub := models.Subcription{
+		Name: OldName,
+	}
+	if err := OldSub.Find(); err != nil {
+		c.JSON(400, gin.H{
+			"msg": "查找订阅失败: " + err.Error(),
+		})
+		return
+	}
+	if strings.TrimSpace(token) == "" {
+		token = OldSub.Token
+		if strings.TrimSpace(token) == "" {
+			token = Md5(OldSub.Name)
+		}
+	}
+	normalizedToken, err := normalizeSubscriptionToken(NewName, token)
+	if err != nil {
+		c.JSON(400, gin.H{"msg": err.Error()})
+		return
+	}
+	if err := ensureSubscriptionTokenAvailable(normalizedToken, OldSub.ID); err != nil {
+		c.JSON(400, gin.H{"msg": err.Error()})
 		return
 	}
 
@@ -141,18 +181,16 @@ func SubUpdate(c *gin.Context) {
 		// 插入nodes
 		NodesData = append(NodesData, FirstNode)
 	}
-	OldSub := models.Subcription{
-		Name: OldName,
-	}
 	NewSub := models.Subcription{
 		Name:      NewName,
+		Token:     normalizedToken,
 		Config:    configs,   // 这里直接赋值字符串
 		NodeOrder: nodes,     // 这里直接赋值字符串
 		Nodes:     NodesData, // 这里直接赋值 nodes 数组
 
 	}
 
-	err := OldSub.Update(&NewSub)
+	err = OldSub.Update(&NewSub)
 	if err != nil {
 		c.JSON(400, gin.H{
 			"msg": "更新订阅失败: " + err.Error(),
@@ -164,6 +202,49 @@ func SubUpdate(c *gin.Context) {
 		"code": "00000",
 		"msg":  "更新订阅成功",
 	})
+}
+
+func normalizeSubscriptionToken(name, token string) (string, error) {
+	token = strings.ToLower(strings.TrimSpace(token))
+	if token == "" {
+		token = randomSubscriptionToken()
+	}
+	if token == "" {
+		token = Md5(name)
+	}
+	if len(token) < 6 || len(token) > 64 {
+		return "", fmt.Errorf("订阅链接标识长度需要在 6 到 64 位之间")
+	}
+	if !regexp.MustCompile(`^[a-z0-9_-]+$`).MatchString(token) {
+		return "", fmt.Errorf("订阅链接标识只能包含小写字母、数字、下划线和短横线")
+	}
+	return token, nil
+}
+
+func randomSubscriptionToken() string {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(buf)
+}
+
+func ensureSubscriptionTokenAvailable(token string, currentID int) error {
+	var subModel models.Subcription
+	list, err := subModel.List()
+	if err != nil {
+		return err
+	}
+	for _, sub := range list {
+		if sub.ID == currentID {
+			continue
+		}
+		existingToken := subscriptionToken(sub)
+		if strings.EqualFold(existingToken, token) {
+			return fmt.Errorf("订阅链接标识已被「%s」使用", sub.Name)
+		}
+	}
+	return nil
 }
 
 // 删除订阅 (无需修改)

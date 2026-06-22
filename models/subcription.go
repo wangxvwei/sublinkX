@@ -13,6 +13,7 @@ type Subcription struct {
 	gorm.Model
 	ID        int
 	Name      string
+	Token     string    `gorm:"index"`
 	Config    string    `gorm:"type:text"` // Config 存储为 JSON 字符串
 	NodeOrder string    `gorm:"type:text"`
 	Nodes     []Node    `gorm:"many2many:subcription_nodes;"`
@@ -59,6 +60,7 @@ func (sub *Subcription) Update(NewName *Subcription) error {
 
 	// 更新非多对多字段，包括 NodeOrder
 	existingSub.Name = NewName.Name // 新名称
+	existingSub.Token = NewName.Token
 	existingSub.Config = NewName.Config
 
 	// 更新 NodeOrder 字段
