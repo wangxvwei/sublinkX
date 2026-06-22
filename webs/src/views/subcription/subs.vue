@@ -9,6 +9,7 @@ import {
   Edit,
   Link,
   Plus,
+  Rank,
   Tickets,
 } from "@element-plus/icons-vue";
 import { AddSub, DelSub, UpdateSub, getSubs } from "@/api/subcription/subs";
@@ -20,6 +21,7 @@ interface Sub {
   Name: string;
   Config: string | Config;
   Nodes: Node[];
+  NodeOrder?: string;
   SubLogs?: SubLog[];
   CreatedAt?: string;
 }
@@ -137,6 +139,26 @@ function openEditDialog(row: Sub | any) {
   clashTemplateMode.value = clashTemplate.value.startsWith("http") ? "url" : "local";
   surgeTemplateMode.value = surgeTemplate.value.startsWith("http") ? "url" : "local";
   subscriptionDialogVisible.value = true;
+}
+
+async function persistSubscriptionOrder(row: Sub | any) {
+  const nodeNames = row.Nodes?.map((item: Node) => item.Name).filter(Boolean) ?? [];
+  if (!row.Name || !nodeNames.length) return;
+
+  try {
+    await UpdateSub({
+      config: typeof row.Config === "string" ? row.Config : JSON.stringify(row.Config),
+      name: row.Name,
+      oldname: row.Name,
+      nodes: nodeNames.join(","),
+    });
+    ElMessage.success("节点顺序已保存");
+    await loadSubscriptions();
+  } catch (error) {
+    console.error(error);
+    ElMessage.error("保存节点顺序失败");
+    await loadSubscriptions();
+  }
 }
 
 async function submitSubscription() {
@@ -310,6 +332,26 @@ function formatDate(row: Sub | any) {
             {{ row.Nodes?.length ?? 0 }}
           </template>
         </el-table-column>
+        <el-table-column label="节点顺序" min-width="300">
+          <template #default="{ row }">
+            <VueDraggable
+              v-if="row.Nodes?.length"
+              v-model="row.Nodes"
+              :animation="160"
+              ghost-class="ghost"
+              handle=".drag-handle"
+              class="inline-node-order"
+              @end="persistSubscriptionOrder(row)"
+            >
+              <div v-for="(node, index) in row.Nodes" :key="node.ID || node.Name" class="inline-node-item">
+                <el-icon class="drag-handle"><Rank /></el-icon>
+                <span class="row-number compact">{{ index + 1 }}</span>
+                <span class="node-title">{{ node.Name }}</span>
+              </div>
+            </VueDraggable>
+            <span v-else class="empty-text">暂无节点</span>
+          </template>
+        </el-table-column>
         <el-table-column label="客户端入口" min-width="180">
           <template #default="{ row }">
             <el-button link type="primary" :icon="Link" @click="showClientLinks(row)">
@@ -423,10 +465,18 @@ function formatDate(row: Sub | any) {
         </el-form-item>
 
         <el-form-item v-if="selectedNodeNames.length" label="节点排序">
-          <VueDraggable v-model="selectedNodeNames" :animation="150" ghost-class="ghost" class="node-order">
+          <div class="sort-helper">拖动左侧手柄调整顺序，保存后会写入订阅的节点输出顺序。</div>
+          <VueDraggable
+            v-model="selectedNodeNames"
+            :animation="160"
+            ghost-class="ghost"
+            handle=".drag-handle"
+            class="node-order"
+          >
             <div v-for="(nodeName, index) in selectedNodeNames" :key="nodeName" class="draggable-item">
+              <el-icon class="drag-handle"><Rank /></el-icon>
               <span class="row-number">{{ index + 1 }}</span>
-              <span>{{ nodeName }}</span>
+              <span class="node-title">{{ nodeName }}</span>
             </div>
           </VueDraggable>
         </el-form-item>
@@ -477,30 +527,60 @@ function formatDate(row: Sub | any) {
 
 <style scoped>
 .subs-page {
-  padding: 16px;
+  min-height: 100%;
+  padding: 20px;
+  color: #1f2937;
+  background:
+    linear-gradient(180deg, rgba(239, 246, 255, 0.9), rgba(248, 250, 252, 0.4) 260px),
+    #f6f8fb;
 }
 
 .page-header {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
+  gap: 20px;
+  padding: 24px;
   margin-bottom: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
 .page-header h2 {
   margin: 0 0 6px;
-  font-size: 22px;
-  font-weight: 650;
+  color: #111827;
+  font-size: 26px;
+  font-weight: 750;
+  letter-spacing: 0;
 }
 
 .page-header p {
   margin: 0;
-  color: var(--el-text-color-secondary);
+  color: #64748b;
 }
 
 .content-card {
-  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.content-card :deep(.el-card__body) {
+  padding: 18px;
+}
+
+.content-card :deep(.el-table) {
+  overflow: hidden;
+  border: 1px solid #edf2f7;
+  border-radius: 8px;
+}
+
+.content-card :deep(.el-table th.el-table__cell) {
+  background: #f8fafc;
+  color: #475569;
 }
 
 .table-footer {
@@ -520,16 +600,38 @@ function formatDate(row: Sub | any) {
   width: 100%;
 }
 
+.sort-helper {
+  width: 100%;
+  margin: -2px 0 10px;
+  color: #64748b;
+  font-size: 13px;
+}
+
 .draggable-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
   cursor: grab;
-  background: var(--el-fill-color-light);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
+  background: rgba(248, 250, 252, 0.86);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.draggable-item:hover,
+.inline-node-item:hover {
+  border-color: #bfdbfe;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.1);
+  transform: translateY(-1px);
+}
+
+.drag-handle {
+  flex: 0 0 auto;
+  color: #94a3b8;
+  cursor: grab;
+  font-size: 18px;
 }
 
 .row-number {
@@ -539,13 +641,56 @@ function formatDate(row: Sub | any) {
   width: 24px;
   height: 24px;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color);
-  border-radius: 50%;
+  color: #475569;
+  background: #e2e8f0;
+  border-radius: 8px;
+}
+
+.row-number.compact {
+  width: 22px;
+  height: 22px;
+}
+
+.node-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #111827;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ghost {
   opacity: 0.55;
+  background: #dbeafe;
+}
+
+.inline-node-order {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.inline-node-item {
+  display: inline-flex;
+  align-items: center;
+  max-width: 260px;
+  gap: 8px;
+  padding: 7px 10px;
+  cursor: grab;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.86);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.inline-node-item .drag-handle {
+  font-size: 15px;
+}
+
+.empty-text {
+  color: #94a3b8;
 }
 
 .client-list {
@@ -558,9 +703,10 @@ function formatDate(row: Sub | any) {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.72);
 }
 
 .client-row p {

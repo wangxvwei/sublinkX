@@ -124,11 +124,81 @@ function toggleSidebar() {
   width: $sidebar-width;
   height: 100%;
   overflow: hidden;
-  background-color: $menu-background;
+  border-right: 1px solid #e5e7eb;
+  background:
+    linear-gradient(180deg, rgba(239, 246, 255, 0.96), rgba(248, 250, 252, 0.86) 240px),
+    #f6f8fb;
+  box-shadow: 8px 0 24px rgba(15, 23, 42, 0.04);
   transition: width 0.28s;
 
   :deep(.el-menu) {
     border: none;
+    background: transparent !important;
+  }
+}
+
+.layout-left {
+  .sidebar-container {
+    :deep(.el-scrollbar__view) {
+      padding: 8px 0 16px;
+    }
+
+    :deep(.el-menu-item),
+    :deep(.el-sub-menu__title) {
+      height: 46px;
+      margin: 6px 10px;
+      padding-right: 14px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      color: #475569 !important;
+      line-height: 46px;
+      transition:
+        color 0.18s ease,
+        background-color 0.18s ease,
+        border-color 0.18s ease,
+        box-shadow 0.18s ease,
+        transform 0.18s ease;
+    }
+
+    :deep(.el-menu-item:hover),
+    :deep(.el-sub-menu__title:hover) {
+      border-color: #e5e7eb;
+      background: rgba(255, 255, 255, 0.78) !important;
+      color: #2563eb !important;
+      transform: translateY(-1px);
+    }
+
+    :deep(.el-menu-item.is-active) {
+      border-color: #dbeafe;
+      background: rgba(255, 255, 255, 0.96) !important;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+      color: #2563eb !important;
+      font-weight: 700;
+    }
+
+    :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
+      color: #2563eb !important;
+      font-weight: 700;
+    }
+
+    :deep(.el-sub-menu .el-menu) {
+      margin: 2px 10px 8px;
+      padding: 4px 0;
+      border: 1px solid #edf2f7;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.55) !important;
+    }
+
+    :deep(.el-sub-menu .el-menu-item) {
+      height: 40px;
+      margin: 4px 8px;
+      line-height: 40px;
+    }
+
+    :deep(.sub-el-icon),
+    :deep(.el-sub-menu__icon-arrow) {
+      color: currentColor !important;
+    }
   }
 }
 
@@ -287,6 +357,16 @@ function toggleSidebar() {
 .layout-left.hideSidebar {
   .sidebar-container {
     width: $sidebar-width-collapsed !important;
+
+    :deep(.el-scrollbar__view) {
+      padding-top: 8px;
+    }
+
+    :deep(.el-menu-item),
+    :deep(.el-sub-menu__title) {
+      margin-right: 7px;
+      margin-left: 7px;
+    }
   }
 
   .main-container {
