@@ -12,267 +12,241 @@ import (
 	"strings"
 	"sublink/models"
 	"sublink/node"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-var SunName string
+var subscriptionHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
-// md5加密
 func Md5(src string) string {
 	m := md5.New()
 	m.Write([]byte(src))
-	res := hex.EncodeToString(m.Sum(nil))
-	return res
+	return hex.EncodeToString(m.Sum(nil))
 }
+
 func GetClient(c *gin.Context) {
-	// 获取协议头
-	token := c.Query("token")
-	ClientIndex := c.Query("client") // 客户端标识
+	token := strings.ToLower(strings.TrimSpace(c.Query("token")))
 	if token == "" {
-		log.Println("token为空")
-		c.Writer.WriteString("token为空")
+		c.String(http.StatusBadRequest, "token is required")
 		return
 	}
-	// fmt.Println(c.Query("token"))
-	Sub := new(models.Subcription)
-	// 获取所有订阅
-	list, _ := Sub.List()
-	// 查找订阅是否包含此名字
+
+	sub, ok := findSubscriptionByToken(token)
+	if !ok {
+		c.String(http.StatusNotFound, "subscription not found")
+		return
+	}
+
+	switch normalizeClient(c.Query("client"), c.GetHeader("User-Agent")) {
+	case "clash":
+		GetClash(c, sub.Name)
+	case "surge":
+		GetSurge(c, sub.Name)
+	default:
+		GetV2ray(c, sub.Name)
+	}
+}
+
+func findSubscriptionByToken(token string) (models.Subcription, bool) {
+	var subModel models.Subcription
+	list, err := subModel.List()
+	if err != nil {
+		log.Println("list subscriptions:", err)
+		return models.Subcription{}, false
+	}
 	for _, sub := range list {
-		// 数据库订阅名字赋值变量
-		SunName = sub.Name
-		//查找token的md5是否匹配并且转换成小写
-		if Md5(SunName) == strings.ToLower(token) {
-			// 判断是否带客户端参数
-			switch ClientIndex {
-			case "clash":
-				GetClash(c)
-				return
-			case "surge":
-				GetSurge(c)
-				return
-			case "v2ray":
-				GetV2ray(c)
-				return
-			}
-			// 自动识别客户端
-			ClientList := []string{"clash", "surge"}
-			for k, v := range c.Request.Header {
-				if k == "User-Agent" {
-					for _, UserAgent := range v {
-						if UserAgent == "" {
-							fmt.Println("User-Agent为空")
-						}
-						// fmt.Println("协议头:", UserAgent)
-						// 遍历客户端列表
-						// SunName = sub.Name
-						for _, client := range ClientList {
-							// fmt.Println(strings.ToLower(UserAgent), strings.ToLower(client))
-							// fmt.Println(strings.Contains(strings.ToLower(UserAgent), strings.ToLower(client)))
-							if strings.Contains(strings.ToLower(UserAgent), strings.ToLower(client)) {
-								// fmt.Println("客户端", client)
-								switch client {
-								case "clash":
-									GetClash(c)
-									return
-								case "surge":
-									GetSurge(c)
-									return
-								default:
-									fmt.Println("未知客户端") // 这个应该是不能达到的，因为已经在上面列出所有情况
-								}
-								// 找到匹配的客户端后退出循环
-
-							}
-						}
-						GetV2ray(c)
-					}
-
-				}
-			}
+		if Md5(sub.Name) == token {
+			return sub, true
 		}
 	}
-
+	return models.Subcription{}, false
 }
-func GetV2ray(c *gin.Context) {
-	var sub models.Subcription
-	if SunName == "" {
-		c.Writer.WriteString("订阅名为空")
-		return
+
+func normalizeClient(queryClient, userAgent string) string {
+	client := strings.ToLower(strings.TrimSpace(queryClient))
+	switch client {
+	case "clash", "mihomo", "clash.meta", "clash-verge", "clash-verge-rev", "verge":
+		return "clash"
+	case "surge":
+		return "surge"
+	case "v2ray":
+		return "v2ray"
 	}
-	// subname := c.Param("subname")
-	// subname := SunName
-	// subname = node.Base64Decode(subname)
-	sub.Name = SunName
-	err := sub.Find()
-	if err != nil {
-		c.Writer.WriteString("找不到这个订阅:" + SunName)
-		return
+
+	ua := strings.ToLower(userAgent)
+	switch {
+	case strings.Contains(ua, "surge"):
+		return "surge"
+	case strings.Contains(ua, "clash"), strings.Contains(ua, "mihomo"), strings.Contains(ua, "verge"):
+		return "clash"
+	default:
+		return "v2ray"
 	}
-	err = sub.Find()
-	if err != nil {
-		c.Writer.WriteString("读取错误")
-		return
-	}
-	baselist := ""
-	for _, v := range sub.Nodes {
-		switch {
-		// 如果包含多条节点
-		case strings.Contains(v.Link, ","):
-			links := strings.Split(v.Link, ",")
-			baselist += strings.Join(links, "\n") + "\n"
-			continue
-		//如果是订阅转换
-		case strings.Contains(v.Link, "http://") || strings.Contains(v.Link, "https://"):
-			resp, err := http.Get(v.Link)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			defer resp.Body.Close()
-			body, _ := io.ReadAll(resp.Body)
-			nodes := node.Base64Decode(string(body))
-			baselist += nodes + "\n"
-		// 默认
-		default:
-			baselist += v.Link + "\n"
-		}
-	}
-	c.Set("subname", SunName)
-	filename := fmt.Sprintf("%s.txt", SunName)
-	encodedFilename := url.QueryEscape(filename)
-	c.Writer.Header().Set("Content-Disposition", "inline; filename*=utf-8''"+encodedFilename)
-	c.Writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-	c.Writer.WriteString(node.Base64Encode(baselist))
 }
-func GetClash(c *gin.Context) {
-	var sub models.Subcription
-	// subname := c.Param("subname")
-	// subname := node.Base64Decode(SunName)
-	sub.Name = SunName
-	err := sub.Find()
-	if err != nil {
-		c.Writer.WriteString("找不到这个订阅:" + SunName)
-		return
-	}
-	// err = sub.Find()
 
-	urls := []string{}
+func GetV2ray(c *gin.Context, subName string) {
+	sub, err := loadSubscription(subName)
+	if err != nil {
+		c.String(http.StatusNotFound, "subscription not found: %s", subName)
+		return
+	}
 
-	models.DB.Model(sub).Preload("Nodes").Find(&sub)
-	log.Println("订阅名:", sub.Nodes)
-	for _, v := range sub.Nodes {
-		log.Println("节点信息:", v)
-		log.Println("节点链接:", v.Link)
-		switch {
-		// 如果包含多条节点
-		case strings.Contains(v.Link, ","):
-			links := strings.Split(v.Link, ",")
-			urls = append(urls, links...)
-			continue
-		//如果是订阅转换
-		case strings.Contains(v.Link, "http://") || strings.Contains(v.Link, "https://"):
-			resp, err := http.Get(v.Link)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			defer resp.Body.Close()
-			body, _ := io.ReadAll(resp.Body)
-			nodes := node.Base64Decode(string(body))
-			links := strings.Split(nodes, "\n")
-			urls = append(urls, links...)
-		// 默认
-		default:
-			urls = append(urls, v.Link)
-		}
-	}
-	log.Println("urls", urls)
-	var configs node.SqlConfig
-	err = json.Unmarshal([]byte(sub.Config), &configs)
+	links, err := collectNodeLinks(sub.Nodes)
 	if err != nil {
-		c.Writer.WriteString("配置读取错误")
+		c.String(http.StatusBadGateway, err.Error())
 		return
 	}
-	DecodeClash, err := node.EncodeClash(urls, configs)
-	if err != nil {
-		c.Writer.WriteString(err.Error())
-		return
-	}
-	c.Set("subname", SunName)
-	filename := fmt.Sprintf("%s.yaml", SunName)
-	encodedFilename := url.QueryEscape(filename)
-	c.Writer.Header().Set("Content-Disposition", "inline; filename*=utf-8''"+encodedFilename)
-	c.Writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	c.Writer.WriteString(string(DecodeClash))
+
+	filename := fmt.Sprintf("%s.txt", sub.Name)
+	setInlineFilename(c, filename)
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusOK, node.Base64Encode(strings.Join(links, "\n")+"\n"))
 }
-func GetSurge(c *gin.Context) {
-	var sub models.Subcription
-	// subname := c.Param("subname")
-	// subname := node.Base64Decode(SunName)
-	sub.Name = SunName
-	err := sub.Find()
+
+func GetClash(c *gin.Context, subName string) {
+	sub, err := loadSubscription(subName)
 	if err != nil {
-		c.Writer.WriteString("找不到这个订阅:" + SunName)
+		c.String(http.StatusNotFound, "subscription not found: %s", subName)
 		return
-	}
-	err = sub.Find()
-	if err != nil {
-		c.Writer.WriteString("读取错误")
-		return
-	}
-	urls := []string{}
-	for _, v := range sub.Nodes {
-		switch {
-		// 如果包含多条节点
-		case strings.Contains(v.Link, ","):
-			links := strings.Split(v.Link, ",")
-			urls = append(urls, links...)
-			continue
-		//如果是订阅转换
-		case strings.Contains(v.Link, "http://") || strings.Contains(v.Link, "https://"):
-			resp, err := http.Get(v.Link)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			defer resp.Body.Close()
-			body, _ := io.ReadAll(resp.Body)
-			nodes := node.Base64Decode(string(body))
-			links := strings.Split(nodes, "\n")
-			urls = append(urls, links...)
-		// 默认
-		default:
-			urls = append(urls, v.Link)
-		}
 	}
 
-	var configs node.SqlConfig
-	err = json.Unmarshal([]byte(sub.Config), &configs)
+	links, err := collectNodeLinks(sub.Nodes)
 	if err != nil {
-		c.Writer.WriteString("配置读取错误")
+		c.String(http.StatusBadGateway, err.Error())
 		return
 	}
-	// log.Println("surge路径:", configs)
-	DecodeClash, err := node.EncodeSurge(urls, configs)
+
+	configs, err := parseSubConfig(sub.Config)
 	if err != nil {
-		c.Writer.WriteString(err.Error())
+		c.String(http.StatusBadRequest, "invalid subscription config: %s", err.Error())
 		return
 	}
-	c.Set("subname", SunName)
-	filename := fmt.Sprintf("%s.conf", SunName)
+
+	clashConfig, err := node.EncodeClash(links, configs)
+	if err != nil {
+		c.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	filename := fmt.Sprintf("%s.yaml", sub.Name)
+	setInlineFilename(c, filename)
+	c.Header("Content-Type", "text/plain; charset=utf-8")
+	c.String(http.StatusOK, string(clashConfig))
+}
+
+func GetSurge(c *gin.Context, subName string) {
+	sub, err := loadSubscription(subName)
+	if err != nil {
+		c.String(http.StatusNotFound, "subscription not found: %s", subName)
+		return
+	}
+
+	links, err := collectNodeLinks(sub.Nodes)
+	if err != nil {
+		c.String(http.StatusBadGateway, err.Error())
+		return
+	}
+
+	configs, err := parseSubConfig(sub.Config)
+	if err != nil {
+		c.String(http.StatusBadRequest, "invalid subscription config: %s", err.Error())
+		return
+	}
+
+	surgeConfig, err := node.EncodeSurge(links, configs)
+	if err != nil {
+		c.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	filename := fmt.Sprintf("%s.conf", sub.Name)
+	setInlineFilename(c, filename)
+	c.Header("Content-Type", "text/plain; charset=utf-8")
+
+	if strings.Contains(surgeConfig, "#!MANAGED-CONFIG") {
+		c.String(http.StatusOK, surgeConfig)
+		return
+	}
+	managedHeader := fmt.Sprintf("#!MANAGED-CONFIG %s%s interval=86400 strict=false", c.Request.Host, c.Request.URL.String())
+	c.String(http.StatusOK, managedHeader+"\n"+surgeConfig)
+}
+
+func loadSubscription(name string) (models.Subcription, error) {
+	sub := models.Subcription{Name: name}
+	err := sub.Find()
+	return sub, err
+}
+
+func parseSubConfig(raw string) (node.SqlConfig, error) {
+	config := node.SqlConfig{
+		Clash: "./template/clash.yaml",
+		Surge: "./template/surge.conf",
+	}
+	if strings.TrimSpace(raw) == "" {
+		return config, nil
+	}
+	err := json.Unmarshal([]byte(raw), &config)
+	return config, err
+}
+
+func collectNodeLinks(nodes []models.Node) ([]string, error) {
+	links := make([]string, 0, len(nodes))
+	for _, item := range nodes {
+		nodeLinks, err := expandNodeLink(item.Link)
+		if err != nil {
+			return nil, err
+		}
+		links = append(links, nodeLinks...)
+	}
+	return links, nil
+}
+
+func expandNodeLink(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
+		body, err := fetchRemoteSubscription(raw)
+		if err != nil {
+			return nil, err
+		}
+		return splitLinks(node.Base64Decode(body)), nil
+	}
+	return splitLinks(raw), nil
+}
+
+func fetchRemoteSubscription(link string) (string, error) {
+	resp, err := subscriptionHTTPClient.Get(link)
+	if err != nil {
+		return "", fmt.Errorf("fetch remote subscription failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("fetch remote subscription failed: %s", resp.Status)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read remote subscription failed: %w", err)
+	}
+	return string(body), nil
+}
+
+func splitLinks(raw string) []string {
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '\n' || r == '\r' || r == ','
+	})
+	links := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if link := strings.TrimSpace(field); link != "" {
+			links = append(links, link)
+		}
+	}
+	return links
+}
+
+func setInlineFilename(c *gin.Context, filename string) {
 	encodedFilename := url.QueryEscape(filename)
-	c.Writer.Header().Set("Content-Disposition", "inline; filename*=utf-8''"+encodedFilename)
-	c.Writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	host := c.Request.Host
-	url := c.Request.URL.String()
-	// 如果包含头部更新信息
-	if strings.Contains(DecodeClash, "#!MANAGED-CONFIG") {
-		c.Writer.WriteString(DecodeClash)
-		return
-	}
-	// 否则就插入头部更新信息
-	interval := fmt.Sprintf("#!MANAGED-CONFIG %s interval=86400 strict=false", host+url)
-	c.Writer.WriteString(string(interval + "\n" + DecodeClash))
+	c.Header("Content-Disposition", "inline; filename*=utf-8''"+encodedFilename)
 }

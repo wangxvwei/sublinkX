@@ -31,6 +31,7 @@ type Proxy struct {
 	Reality_opts       map[string]interface{} `yaml:"reality-opts,omitempty"`
 	Ws_opts            map[string]interface{} `yaml:"ws-opts,omitempty"`
 	Grpc_opts          map[string]interface{} `yaml:"grpc-opts,omitempty"`
+	Xhttp_opts         map[string]interface{} `yaml:"xhttp-opts,omitempty"`
 	Auth_str           string                 `yaml:"auth_str,omitempty"`
 	Auth               string                 `yaml:"auth,omitempty"`
 	Up                 int                    `yaml:"up,omitempty"`
@@ -235,9 +236,15 @@ func EncodeClash(urls []string, sqlconfig SqlConfig) ([]byte, error) {
 			if vless.Query.Mode == "multi" {
 				grpc_opts["grpc-mode"] = "multi"
 			}
+			xhttp_opts := map[string]interface{}{
+				"path": vless.Query.Path,
+				"host": vless.Query.Host,
+				"mode": vless.Query.Mode,
+			}
 			DeleteOpts(ws_opts)
 			DeleteOpts(reality_opts)
 			DeleteOpts(grpc_opts)
+			DeleteOpts(xhttp_opts)
 			tls := false
 			if vless.Query.Security != "" {
 				tls = true
@@ -256,12 +263,18 @@ func EncodeClash(urls []string, sqlconfig SqlConfig) ([]byte, error) {
 				Network:            vless.Query.Type,
 				Flow:               vless.Query.Flow,
 				Alpn:               vless.Query.Alpn,
-				Ws_opts:            ws_opts,
 				Reality_opts:       reality_opts,
-				Grpc_opts:          grpc_opts,
 				Udp:                sqlconfig.Udp,
 				Skip_cert_verify:   sqlconfig.Cert,
 				Tls:                tls,
+			}
+			switch vless.Query.Type {
+			case "ws":
+				vlessproxy.Ws_opts = ws_opts
+			case "grpc":
+				vlessproxy.Grpc_opts = grpc_opts
+			case "xhttp":
+				vlessproxy.Xhttp_opts = xhttp_opts
 			}
 			proxys = append(proxys, vlessproxy)
 		case Scheme == "hy" || Scheme == "hysteria":

@@ -84,6 +84,49 @@ docker run --name sublinkx -p 8000:8000 \
 -d jaaksi/sublinkx
 ```
 
+### Docker / NAS 部署与更新
+
+默认镜像发布到 GitHub Container Registry：
+
+```bash
+docker run --name sublinkx -p 8000:8000 \
+  -v $PWD/db:/app/db \
+  -v $PWD/template:/app/template \
+  -v $PWD/logs:/app/logs \
+  -e TZ=Asia/Shanghai \
+  -d ghcr.io/wangxvwei/sublinkx:latest
+```
+
+使用 Docker Compose：
+
+```bash
+docker compose up -d
+```
+
+手动更新：
+
+```bash
+docker pull ghcr.io/wangxvwei/sublinkx:latest
+docker compose up -d
+```
+
+自动检查更新：
+
+系统设置页提供“版本更新”面板，会检查 GitHub 最新版本并给出 Docker 更新命令。
+
+自动拉取新镜像并重启容器：
+
+```bash
+docker compose --profile auto-update up -d
+```
+
+自动构建发布：
+
+- 推送到 `main` 会发布 `latest` 镜像。
+- 推送 `v*.*.*` 标签会发布对应版本镜像。
+- 默认发布 `ghcr.io/wangxvwei/sublinkx`。
+- 如需同步 Docker Hub，可在 workflow 中额外加入 Docker Hub 登录与镜像推送步骤。
+
 To support the development of my project, I plan to apply for a free VPS offered by ZMTO. My project currently involves Docker image support for multiple architectures (arm64 and amd64), as well as automation for building and pushing. Therefore, I am requesting a 4-core, 8GB RAM Ubuntu VPS with root access.
 
 Thank you to the ZMTO team for your support. I look forward to leveraging this VPS to optimize my project's performance and development efficiency. If you have any questions or suggestions regarding my project, feel free to open an issue, and I will do my best to improve and optimize it.

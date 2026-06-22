@@ -1,7 +1,12 @@
 .DS_Store
 *.DS_Store
+.git
+.github
 db
 logs
+work-preview
+webs/node_modules
+webs/dist
 webs
 README.md
 README.en-US.md

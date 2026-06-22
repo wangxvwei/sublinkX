@@ -1,508 +1,601 @@
-<script setup lang='ts'>
-import { ref,onMounted  } from 'vue'
-import {getSubs,AddSub,DelSub,UpdateSub} from "@/api/subcription/subs"
-import {getTemp} from "@/api/subcription/temp"
-import {getNodes} from "@/api/subcription/node"
-import QrcodeVue from 'qrcode.vue'
-import md5 from 'md5'
-import { VueDraggable } from 'vue-draggable-plus'
+<script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
+import md5 from "md5";
+import QrcodeVue from "qrcode.vue";
+import { VueDraggable } from "vue-draggable-plus";
+import {
+  CopyDocument,
+  Delete,
+  Edit,
+  Link,
+  Plus,
+  Tickets,
+} from "@element-plus/icons-vue";
+import { AddSub, DelSub, UpdateSub, getSubs } from "@/api/subcription/subs";
+import { getNodes } from "@/api/subcription/node";
+import { getTemp } from "@/api/subcription/temp";
 
 interface Sub {
   ID: number;
   Name: string;
-  CreateDate: string;
-  Config: Config;
+  Config: string | Config;
   Nodes: Node[];
-  SubLogs:SubLogs[];
+  SubLogs?: SubLog[];
+  CreatedAt?: string;
 }
+
 interface Node {
   ID: number;
   Name: string;
   Link: string;
-  CreateDate: string;
 }
+
 interface Config {
   clash: string;
-  surge:string;
-  udp: string;
-  cert: string;
+  surge: string;
+  udp: boolean;
+  cert: boolean;
 }
-interface SubLogs {
-  date: string;
-  name: string;
-  count: number;
-  address: string;
+
+interface SubLog {
+  IP?: string;
+  Count?: number;
+  Addr?: string;
+  Date?: string;
 }
-interface Temp {
+
+interface TemplateFile {
   file: string;
   text: string;
-  CreateDate: string;
-}
-const tableData = ref<Sub[]>([])
-const Clash = ref('')
-const Surge = ref('')
-const SubTitle = ref('')
-const Subname = ref('')
-const oldSubname = ref('')
-const dialogVisible = ref(false)
-const table = ref()
-const NodesList = ref<Node[]>([])
-const value1 = ref<string[]>([])
-const checkList = ref<string[]>([]) // 配置列表
-const iplogsdialog = ref(false)
-const IplogsList = ref<SubLogs[]>([])
-const qrcode = ref('')
-const templist = ref<Temp[]>([])
-async function getsubs() {
-  const {data} = await getSubs();
-    tableData.value = data
-}
-async function gettemps() {
-    const {data} = await getTemp();
-    templist.value = data
-    console.log(templist.value);
-}
-onMounted(() => {
-    getsubs()
-    gettemps()
-})
-onMounted(async() => {
-    const {data} = await getNodes();
-    NodesList.value = data
-})
-
-
-const addSubs = async ()=>{
-    const config = JSON.stringify({
-    "clash": Clash.value.trim(),
-    "surge": Surge.value.trim(),
-    "udp": checkList.value.includes('udp') ? true :  false,
-    "cert": checkList.value.includes('cert') ? true :  false
-
-  })
-  if (SubTitle.value === '添加订阅') {
-    await AddSub({
-      config: config,
-      name: Subname.value.trim(),
-      nodes: value1.value.join(',')
-    })
-    getsubs()
-    ElMessage.success("添加成功");
-  }else{
-    await UpdateSub({
-      config: config,
-      name: Subname.value.trim(),
-      nodes: value1.value.join(','),
-      oldname: oldSubname.value
-    })
-    getsubs()
-    ElMessage.success("更新成功");
-  }
-
-    dialogVisible.value = false;
 }
 
-const multipleSelection = ref<Sub[]>([])
-const handleSelectionChange = (val: Sub[]) => {
-  multipleSelection.value = val
-  
-}
-const selectAll = () => {
-  tableData.value.forEach(row => {
-            table.value.toggleRowSelection(row, true)
-        })
-}
-// IP记录
-const handleIplogs = (row: any) => {
-  iplogsdialog.value = true
-  nextTick(() => {
-    tableData.value.forEach((item) => {
-    if (item.ID === row.ID) {
-      IplogsList.value = item.SubLogs
-    }
-  })
-  
-  })
+interface ClientOption {
+  key: string;
+  label: string;
+  param?: string;
 }
 
-const toggleSelection = () => {
-  table.value.clearSelection()
-}
-
-const handleAddSub = ()=>{
-  SubTitle.value = '添加订阅'
-  Subname.value = ''
-  oldSubname.value = ''
-  checkList.value = []
-  Clash.value = './template/clash.yaml'
-  Surge.value = './template/surge.conf'
-  dialogVisible.value = true
-  value1.value = []
-}
-
-const handleEdit = (row:any) => {
-  for (let i = 0; i < tableData.value.length; i++) {
-    if (tableData.value[i].ID === row.ID) {
-      function toConfig(value: string | Config): Config {
-        if (typeof value === 'string') {
-          return JSON.parse(value) as Config;
-        } else {
-          return value as Config;
-        }
-      }
-      const config = toConfig(tableData.value[i].Config);
-      SubTitle.value = '编辑订阅'
-      Subname.value = tableData.value[i].Name
-      oldSubname.value = Subname.value
-      if (config.udp)  {
-        checkList.value.push('udp')
-      }
-      if (config.cert)  {
-        checkList.value.push('cert')
-      }
-      Clash.value = config.clash
-      Surge.value = config.surge
-      dialogVisible.value = true
-      value1.value = tableData.value[i].Nodes.map((item) => item.Name)
-    }
-  }
-}
-const handleDel = (row:any) => {
-  ElMessageBox.confirm(
-    `你是否要删除 ${row.Name} ?`,
-    '提示',
-    {
-      confirmButtonText: 'OK',
-      cancelButtonText: 'Cancel',
-      type: 'warning',
-    }
-  ).then(async () => {
-      await DelSub({
-        id: row.ID
-      })
-      getsubs()
-      ElMessage({
-        type: 'success',
-        message: '删除成功',
-      })
-      
-    })
-}
-
-const selectDel = () => {
-  if (multipleSelection.value.length === 0) {
-      return
-  }
-  ElMessageBox.confirm(
-    `你是否要删除选中这些 ?`,
-    '提示',
-    {
-      confirmButtonText: 'OK',
-      cancelButtonText: 'Cancel',
-      type: 'warning',
-    }
-  ).then( () => {
-    for (let i = 0; i < multipleSelection.value.length; i++) {
-       DelSub({
-        id: multipleSelection.value[i].ID
-      })
-        tableData.value = tableData.value.filter((item) => item.ID !== multipleSelection.value[i].ID)
-      }
-      ElMessage({
-        type: 'success',
-        message: '删除成功',
-      })
-      
-      
-    })
-
-}
-// 分页显示
+const subscriptions = ref<Sub[]>([]);
+const nodes = ref<Node[]>([]);
+const templates = ref<TemplateFile[]>([]);
+const selectedRows = ref<Sub[]>([]);
+const selectedNodeNames = ref<string[]>([]);
+const logs = ref<SubLog[]>([]);
+const subscriptionDialogVisible = ref(false);
+const clientDialogVisible = ref(false);
+const qrDialogVisible = ref(false);
+const logsDialogVisible = ref(false);
+const dialogTitle = ref("添加订阅");
+const subName = ref("");
+const oldSubName = ref("");
+const clashTemplate = ref("./template/clash.yaml");
+const surgeTemplate = ref("./template/surge.conf");
+const clashTemplateMode = ref<"local" | "url">("local");
+const surgeTemplateMode = ref<"local" | "url">("local");
+const enabledOptions = ref<string[]>([]);
 const currentPage = ref(1);
 const pageSize = ref(10);
-const handleSizeChange = (val: number) => {
-  pageSize.value = val;
-  // console.log(`每页 ${val} 条`);
-}
+const clientUrls = ref<Record<string, string>>({});
+const qrTitle = ref("");
+const qrUrl = ref("");
 
-const handleCurrentChange = (val: number) => {
-  currentPage.value = val;
-}
-// 表格数据静态化
-const currentTableData = computed(() => {
+const clientOptions: ClientOption[] = [
+  { key: "auto", label: "自动识别" },
+  { key: "clash", label: "Clash Verge / Mihomo", param: "clash" },
+  { key: "surge", label: "Surge", param: "surge" },
+  { key: "v2ray", label: "V2Ray", param: "v2ray" },
+];
+
+const pagedSubscriptions = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
-  const end = start + pageSize.value;
-  return tableData.value.slice(start, end);
+  return subscriptions.value.slice(start, start + pageSize.value);
 });
 
-// 复制链接
-const copyUrl = (url: string) => {
-  const textarea = document.createElement('textarea');
-  textarea.value = url;
-  document.body.appendChild(textarea);
-  textarea.select();
+onMounted(async () => {
+  await Promise.all([loadSubscriptions(), loadNodes(), loadTemplates()]);
+});
+
+async function loadSubscriptions() {
+  const { data } = await getSubs();
+  subscriptions.value = Array.isArray(data) ? data : [];
+}
+
+async function loadNodes() {
+  const { data } = await getNodes();
+  nodes.value = Array.isArray(data) ? data : [];
+}
+
+async function loadTemplates() {
+  const { data } = await getTemp();
+  templates.value = Array.isArray(data) ? data : [];
+}
+
+function openAddDialog() {
+  dialogTitle.value = "添加订阅";
+  subName.value = "";
+  oldSubName.value = "";
+  selectedNodeNames.value = [];
+  enabledOptions.value = ["udp"];
+  clashTemplate.value = "./template/clash.yaml";
+  surgeTemplate.value = "./template/surge.conf";
+  clashTemplateMode.value = "local";
+  surgeTemplateMode.value = "local";
+  subscriptionDialogVisible.value = true;
+}
+
+function openEditDialog(row: Sub | any) {
+  const config = parseConfig(row.Config);
+  dialogTitle.value = "编辑订阅";
+  subName.value = row.Name;
+  oldSubName.value = row.Name;
+  selectedNodeNames.value = row.Nodes?.map((item: Node) => item.Name) ?? [];
+  enabledOptions.value = [];
+  if (config.udp) enabledOptions.value.push("udp");
+  if (config.cert) enabledOptions.value.push("cert");
+  clashTemplate.value = config.clash || "./template/clash.yaml";
+  surgeTemplate.value = config.surge || "./template/surge.conf";
+  clashTemplateMode.value = clashTemplate.value.startsWith("http") ? "url" : "local";
+  surgeTemplateMode.value = surgeTemplate.value.startsWith("http") ? "url" : "local";
+  subscriptionDialogVisible.value = true;
+}
+
+async function submitSubscription() {
+  if (!subName.value.trim()) {
+    ElMessage.warning("订阅名称不能为空");
+    return;
+  }
+  if (!selectedNodeNames.value.length) {
+    ElMessage.warning("请至少选择一个节点");
+    return;
+  }
+
+  const config: Config = {
+    clash: clashTemplate.value.trim(),
+    surge: surgeTemplate.value.trim(),
+    udp: enabledOptions.value.includes("udp"),
+    cert: enabledOptions.value.includes("cert"),
+  };
+
   try {
-    const successful = document.execCommand('copy');
-    const msg = successful ? 'success' : 'warning';
-    const message = successful ? '复制成功！' : '复制失败！';
-    ElMessage({
-      type: msg,
-      message,
+    if (dialogTitle.value === "添加订阅") {
+      await AddSub({
+        config: JSON.stringify(config),
+        name: subName.value.trim(),
+        nodes: selectedNodeNames.value.join(","),
+      });
+      ElMessage.success("订阅已添加");
+    } else {
+      await UpdateSub({
+        config: JSON.stringify(config),
+        name: subName.value.trim(),
+        oldname: oldSubName.value,
+        nodes: selectedNodeNames.value.join(","),
+      });
+      ElMessage.success("订阅已更新");
+    }
+    subscriptionDialogVisible.value = false;
+    await loadSubscriptions();
+  } catch (error) {
+    console.error(error);
+    ElMessage.error("保存失败");
+  }
+}
+
+async function deleteSubscription(row: Sub | any) {
+  try {
+    await ElMessageBox.confirm(`确定删除「${row.Name}」吗？`, "删除订阅", {
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+      type: "warning",
     });
-  } catch (err) {
-    ElMessage({
-      type: 'warning',
-      message: '复制失败！',
+    await DelSub({ id: row.ID });
+    ElMessage.success("订阅已删除");
+    await loadSubscriptions();
+  } catch (error) {
+    if (error !== "cancel") {
+      console.error(error);
+      ElMessage.error("删除失败");
+    }
+  }
+}
+
+async function deleteSelected() {
+  if (!selectedRows.value.length) {
+    ElMessage.warning("请选择要删除的订阅");
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(`确定删除选中的 ${selectedRows.value.length} 个订阅吗？`, "批量删除", {
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+      type: "warning",
     });
-  } finally {
+    await Promise.all(selectedRows.value.map((item) => DelSub({ id: item.ID })));
+    ElMessage.success("已删除选中订阅");
+    await loadSubscriptions();
+  } catch (error) {
+    if (error !== "cancel") {
+      console.error(error);
+      ElMessage.error("批量删除失败");
+    }
+  }
+}
+
+function handleSelectionChange(selection: Sub[]) {
+  selectedRows.value = selection;
+}
+
+function showLogs(row: Sub | any) {
+  logs.value = row.SubLogs ?? [];
+  logsDialogVisible.value = true;
+}
+
+function showClientLinks(row: Sub | any) {
+  const baseUrl = `${location.protocol}//${location.host}/c/?token=${md5(row.Name)}`;
+  clientUrls.value = clientOptions.reduce<Record<string, string>>((result, option) => {
+    result[option.key] = option.param ? `${baseUrl}&client=${option.param}` : baseUrl;
+    return result;
+  }, {});
+  clientDialogVisible.value = true;
+}
+
+function showQr(title: string, url: string) {
+  qrTitle.value = title;
+  qrUrl.value = url;
+  qrDialogVisible.value = true;
+}
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
     document.body.removeChild(textarea);
   }
-};
-
-const copyInfo = (row: any) => {
-  copyUrl(row.Link)
-}
-const handleBase64 = (text: string) => {
-  return  window.btoa(unescape(encodeURIComponent(text)));
-}
-const ClientDiaLog = ref(false)
-const ClientList = ['v2ray','clash','surge'] // 客户端列表
-const ClientUrls = ref<Record<string, string>>({})
-const ClientUrl = ref('')
-const handleClient = (name:string) => {
-  let serverAddress = location.protocol + '//' + location.hostname + (location.port ? ':' + location.port : '');
-  ClientDiaLog.value = true
-  ClientUrl.value = `${serverAddress}/c/?token=${md5(name)}`
-  ClientList.forEach((item:string) => {
-    ClientUrls.value[item]=`${serverAddress}/c/?token=${md5(name)}`
-  })
+  ElMessage.success("已复制到剪贴板");
 }
 
-const Qrdialog = ref(false)
-const QrTitle = ref('')
-const handleQrcode = (url:string,title:string)=>{
-  Qrdialog.value = true
-  qrcode.value = url 
-  QrTitle.value = title
+function openUrl(url: string) {
+  window.open(url, "_blank");
 }
-const OpenUrl = (url:string) => {
-  window.open(url)
-}
-const clientradio = ref('1')
 
-// 注册拖拽函数
-const toggleSelect = (name: string) => {
-  const index = value1.value.indexOf(name)
-  if (index === -1) {
-    value1.value.push(name)
-  } else {
-    value1.value.splice(index, 1)
+function parseConfig(value: string | Config): Config {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value) as Config;
+  } catch {
+    return {
+      clash: "./template/clash.yaml",
+      surge: "./template/surge.conf",
+      udp: true,
+      cert: false,
+    };
   }
 }
 
+function formatDate(row: Sub | any) {
+  return row.CreatedAt ? new Date(row.CreatedAt).toLocaleString() : "-";
+}
 </script>
 
 <template>
-  <div>
-    <el-dialog v-model="Qrdialog" width="300px" style="text-align: center" :title="QrTitle">
-      <qrcode-vue :value="qrcode"  :size="200" level="H" />
-      <el-input
-      v-model="qrcode"
-      >
-      </el-input>
-      <el-button @click="copyUrl(qrcode)">复制</el-button>
-      <el-button @click="OpenUrl(qrcode)">打开</el-button>
-    </el-dialog>
+  <div class="subs-page">
+    <section class="page-header">
+      <div>
+        <h2>订阅管理</h2>
+        <p>为 Clash Verge Rev / Mihomo、Surge 和 V2Ray 生成订阅地址。</p>
+      </div>
+      <el-button type="primary" :icon="Plus" @click="openAddDialog">添加订阅</el-button>
+    </section>
 
-    <el-dialog v-model="ClientDiaLog" title="客户端(点击二维码获取地址)" style="text-align: center" width="80%">
-      <el-row>
-        <el-col>
-        <el-tag type="success" size="large">自动识别</el-tag>
-        <el-button @click="handleQrcode(ClientUrl,'自动识别客户端')">二维码</el-button>
-      </el-col>
-        <el-col v-for="(item,index) in ClientUrls" style="margin-bottom:10px;">
-          <el-tag type="success" size="large">{{index}}</el-tag>
-          <el-button @click="handleQrcode(`${item}&client=${index}`,index)">二维码</el-button>
-        </el-col>
-        </el-row>
-    </el-dialog>
-    
-    <el-dialog v-model="iplogsdialog" title="访问记录" width="80%" draggable>
-  <template #footer>
-    <div class="dialog-footer">
-      <el-table :data="IplogsList" border style="width: 100%">
-        <el-table-column prop="IP" label="Ip" />
-        <el-table-column prop="Count" label="总访问次数" />
-        <el-table-column prop="Addr" label="来源" />
-        <el-table-column prop="Date" label="最近时间" />
+    <el-card shadow="never" class="content-card">
+      <el-table
+        :data="pagedSubscriptions"
+        stripe
+        row-key="ID"
+        @selection-change="handleSelectionChange"
+      >
+        <el-table-column type="selection" width="48" />
+        <el-table-column prop="Name" label="订阅名称" min-width="180">
+          <template #default="{ row }">
+            <el-tag effect="plain">{{ row.Name }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="节点数量" width="110">
+          <template #default="{ row }">
+            {{ row.Nodes?.length ?? 0 }}
+          </template>
+        </el-table-column>
+        <el-table-column label="客户端入口" min-width="180">
+          <template #default="{ row }">
+            <el-button link type="primary" :icon="Link" @click="showClientLinks(row)">
+              订阅地址
+            </el-button>
+          </template>
+        </el-table-column>
+        <el-table-column label="创建时间" min-width="180" :formatter="formatDate" sortable />
+        <el-table-column label="操作" width="230" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" :icon="Tickets" @click="showLogs(row)">记录</el-button>
+            <el-button link type="primary" :icon="Edit" @click="openEditDialog(row)">编辑</el-button>
+            <el-button link type="danger" :icon="Delete" @click="deleteSubscription(row)">删除</el-button>
+          </template>
+        </el-table-column>
       </el-table>
-    </div>
-  </template>
-</el-dialog>
-    <el-dialog
-    v-model="dialogVisible"
-    :title="SubTitle"
-    width="80%"
-  >
-  <el-input v-model="Subname" placeholder="请输入订阅名称" />
-  
-  <el-row >
-  <el-tag type="primary">clash模版选择</el-tag>
-  <el-radio-group v-model="clientradio" class="ml-4">
-      <el-radio value="1">本地</el-radio>
-      <el-radio value="2">url链接</el-radio>
-    </el-radio-group>
-  <el-select v-model="Clash" placeholder="clash模版文件"  v-if="clientradio === '1'">
-    <el-option v-for="template in templist" :key="template.file" :label="template.file" :value="'./template/'+template.file" />
-  </el-select>
-  <el-input v-model="Clash" placeholder="clash模版文件"  v-else />
-</el-row>
-<el-row >
-  <el-tag type="primary">surge模版选择</el-tag>
-  <el-radio-group v-model="clientradio" class="ml-4">
-      <el-radio value="1">本地</el-radio>
-      <el-radio value="2">url链接</el-radio>
-    </el-radio-group>
-  <el-select v-model="Surge" placeholder="surge模版文件"  v-if="clientradio === '1'">
-    <el-option v-for="template in templist" :key="template.file" :label="template.file" :value="'./template/'+template.file" />
-  </el-select>
-  <el-input v-model="Surge" placeholder="surge模版文件"  v-else />
-</el-row>
 
-  <el-row>
-    <el-tag type="primary">强制开启选项</el-tag>
-  <el-checkbox-group v-model="checkList"  style="margin: 5px;">
-    <el-checkbox :value="'udp'">udp</el-checkbox>
-    <el-checkbox :value="'cert'">跳过证书</el-checkbox>
-  </el-checkbox-group>
-</el-row>
-  <div class="m-4">
-    <p>选择已有的节点列表</p>
-    <el-select
-      v-model="value1"
-      multiple
-      placeholder="Select"
-      style="width: 100%"
-    >
-      <el-option
-        v-for="item in NodesList"
-        :key="item.Name"
-        :label="item.Name"
-        :value="item.Name"
-      />
-        <div style="margin-top: 20px">
-
-  </div>
-    </el-select>
-    <p>已选节点（可拖拽排序）</p>
-    <VueDraggable v-model="value1" :animation="150" ghost-class="ghost">
-      <div v-for="(nodeName, index) in value1" :key="nodeName" class="draggable-item">
-        <span class="row-number">{{ index + 1 }}.</span> {{ nodeName }}
+      <div class="table-footer">
+        <div class="batch-actions">
+          <el-button type="danger" :icon="Delete" @click="deleteSelected">删除选中</el-button>
+        </div>
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 30, 40]"
+          :total="subscriptions.length"
+          layout="total, sizes, prev, pager, next, jumper"
+        />
       </div>
-    </VueDraggable>
-
-
-  </div>
-    <template #footer>
-      <div class="dialog-footer">
-        <el-button @click="dialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="addSubs">确定</el-button>
-      </div>
-    </template>
-  </el-dialog>
-    <el-card>
-    <el-button type="primary" @click="handleAddSub">添加订阅</el-button>
-    <div style="margin-bottom: 10px"></div>
-
-      <el-table ref="table" 
-      :data="currentTableData" 
-      style="width: 100%" 
-      stripe
-      @selection-change="handleSelectionChange" 
-      row-key="ID" 
-      :tree-props="{children: 'Nodes'}"
-      >
-    <el-table-column type="selection" fixed prop="ID" label="id"  />
-    <el-table-column prop="Name" label="订阅名称 / 节点"  >
-    <template #default="{row}">
-      <el-tag :type="!row.Nodes ? 'success' : 'primary'" >{{row.Name}}</el-tag>
-        </template>
-    </el-table-column>
-    <el-table-column prop="Link" label="链接" :show-overflow-tooltip="true" >
-      <template #default="{row}">
-        <div v-if="row.Nodes">
-          <el-link type="primary" size="small" @click="handleClient(row.Name)">客户端</el-link>
-        </div>
-        </template>
-      </el-table-column>
- 
-    <el-table-column prop="CreatedAt" label="创建时间" sortable  />
-    <el-table-column  label="操作" width="120">
-      <template #default="scope">
-        <div v-if="scope.row.Nodes">
-          <el-button link type="primary" size="small" @click="handleIplogs(scope.row)">记录</el-button>
-          <el-button link type="primary" size="small" @click="handleEdit(scope.row)">编辑</el-button>
-  <el-button link type="primary" size="small" @click="handleDel(scope.row)">删除</el-button>
-        </div>
-        <div v-else>
-          <el-button link type="primary" size="small" @click="copyInfo(scope.row)">复制</el-button>
-        </div>
-
-      </template>
-    </el-table-column>
-  </el-table>
-  <div style="margin-top: 20px" />
-    <el-button type="info" @click="selectAll()">全选</el-button>
-    <el-button type="warning" @click="toggleSelection()">取消选择</el-button>
-    <el-button type="danger" @click="selectDel">批量删除</el-button>
-  <div style="margin-top: 20px"/>
-  <el-pagination
-  @size-change="handleSizeChange"
-  @current-change="handleCurrentChange"
-  :current-page="currentPage"
-  :page-size="pageSize"
-  layout="total, sizes, prev, pager, next, jumper"
-  :page-sizes="[10, 20, 30, 40]"
-  :total="tableData.length">
-</el-pagination>
-
     </el-card>
+
+    <el-dialog v-model="subscriptionDialogVisible" :title="dialogTitle" width="760px">
+      <el-form label-position="top">
+        <el-form-item label="订阅名称">
+          <el-input v-model="subName" placeholder="例如：全部节点" />
+        </el-form-item>
+
+        <el-form-item label="Clash / Mihomo 模板">
+          <el-radio-group v-model="clashTemplateMode">
+            <el-radio label="local">本地模板</el-radio>
+            <el-radio label="url">URL 模板</el-radio>
+          </el-radio-group>
+          <el-select
+            v-if="clashTemplateMode === 'local'"
+            v-model="clashTemplate"
+            filterable
+            class="full-width"
+            placeholder="选择模板文件"
+          >
+            <el-option
+              v-for="template in templates"
+              :key="template.file"
+              :label="template.file"
+              :value="`./template/${template.file}`"
+            />
+          </el-select>
+          <el-input
+            v-else
+            v-model="clashTemplate"
+            class="full-width"
+            placeholder="https://example.com/clash.yaml"
+          />
+        </el-form-item>
+
+        <el-form-item label="Surge 模板">
+          <el-radio-group v-model="surgeTemplateMode">
+            <el-radio label="local">本地模板</el-radio>
+            <el-radio label="url">URL 模板</el-radio>
+          </el-radio-group>
+          <el-select
+            v-if="surgeTemplateMode === 'local'"
+            v-model="surgeTemplate"
+            filterable
+            class="full-width"
+            placeholder="选择模板文件"
+          >
+            <el-option
+              v-for="template in templates"
+              :key="template.file"
+              :label="template.file"
+              :value="`./template/${template.file}`"
+            />
+          </el-select>
+          <el-input
+            v-else
+            v-model="surgeTemplate"
+            class="full-width"
+            placeholder="https://example.com/surge.conf"
+          />
+        </el-form-item>
+
+        <el-form-item label="输出选项">
+          <el-checkbox-group v-model="enabledOptions">
+            <el-checkbox label="udp">启用 UDP</el-checkbox>
+            <el-checkbox label="cert">跳过证书校验</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+
+        <el-form-item label="选择节点">
+          <el-select
+            v-model="selectedNodeNames"
+            multiple
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            class="full-width"
+            placeholder="选择要包含的节点"
+          >
+            <el-option v-for="item in nodes" :key="item.Name" :label="item.Name" :value="item.Name" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item v-if="selectedNodeNames.length" label="节点排序">
+          <VueDraggable v-model="selectedNodeNames" :animation="150" ghost-class="ghost" class="node-order">
+            <div v-for="(nodeName, index) in selectedNodeNames" :key="nodeName" class="draggable-item">
+              <span class="row-number">{{ index + 1 }}</span>
+              <span>{{ nodeName }}</span>
+            </div>
+          </VueDraggable>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="subscriptionDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitSubscription">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="clientDialogVisible" title="客户端订阅地址" width="680px">
+      <div class="client-list">
+        <div v-for="option in clientOptions" :key="option.key" class="client-row">
+          <div>
+            <strong>{{ option.label }}</strong>
+            <p>{{ clientUrls[option.key] }}</p>
+          </div>
+          <div class="client-actions">
+            <el-button :icon="CopyDocument" @click="copyText(clientUrls[option.key])">复制</el-button>
+            <el-button @click="showQr(option.label, clientUrls[option.key])">二维码</el-button>
+            <el-button type="primary" @click="openUrl(clientUrls[option.key])">打开</el-button>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+
+    <el-dialog v-model="qrDialogVisible" :title="qrTitle" width="360px" class="qr-dialog">
+      <div class="qr-box">
+        <qrcode-vue :value="qrUrl" :size="220" level="H" />
+        <el-input v-model="qrUrl" type="textarea" :autosize="{ minRows: 2, maxRows: 4 }" />
+        <div class="client-actions">
+          <el-button :icon="CopyDocument" @click="copyText(qrUrl)">复制</el-button>
+          <el-button type="primary" @click="openUrl(qrUrl)">打开</el-button>
+        </div>
+      </div>
+    </el-dialog>
+
+    <el-dialog v-model="logsDialogVisible" title="访问记录" width="760px">
+      <el-table :data="logs" border>
+        <el-table-column prop="IP" label="IP" min-width="150" />
+        <el-table-column prop="Count" label="访问次数" width="110" />
+        <el-table-column prop="Addr" label="来源" min-width="180" />
+        <el-table-column prop="Date" label="最近访问" min-width="180" />
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
-.el-card{
-  margin: 10px;
+.subs-page {
+  padding: 16px;
 }
-.el-input{
-  margin-bottom: 10px;
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
 }
-.el-tag{
-  margin: 5px;
+
+.page-header h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 650;
 }
-/**拖拽样式 */
-.draggable-item {
-  padding: 8px 10px;
-  margin-bottom: 5px;
-  background-color: #f0f2f5;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
+
+.page-header p {
+  margin: 0;
+  color: var(--el-text-color-secondary);
+}
+
+.content-card {
+  border-radius: 6px;
+}
+
+.table-footer {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.full-width {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.node-order {
+  width: 100%;
+}
+
+.draggable-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
   cursor: grab;
-}
-
-.draggable-item:hover {
-  background-color: #e6e8eb;
-}
-
-.ghost {
-  opacity: 0.5;
-  background: #c8ebfb;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
 }
 
 .row-number {
-  margin-right: 10px;
-  font-weight: bold;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color);
+  border-radius: 50%;
+}
+
+.ghost {
+  opacity: 0.55;
+}
+
+.client-list {
+  display: grid;
+  gap: 12px;
+}
+
+.client-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
+
+.client-row p {
+  max-width: 390px;
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.qr-box {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+}
+
+@media (max-width: 760px) {
+  .page-header,
+  .table-footer,
+  .client-row {
+    display: block;
+  }
+
+  .page-header .el-button,
+  .batch-actions,
+  .client-actions {
+    margin-top: 12px;
+  }
 }
 </style>

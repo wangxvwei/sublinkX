@@ -1,538 +1,813 @@
-<script setup lang='ts'>
-import { ref,onMounted,nextTick  } from 'vue'
-import {getNodes,AddNodes,DelNode,UpdateNode,GetGroup,SetGroup} from "@/api/subcription/node"
-import type { ElTable } from 'element-plus'
+<script setup lang="ts">
+import { computed, nextTick, onMounted, reactive, ref } from "vue";
+import {
+  CircleCheck,
+  CopyDocument,
+  Delete,
+  Edit,
+  Files,
+  FolderOpened,
+  Plus,
+  Refresh,
+  Search,
+} from "@element-plus/icons-vue";
+import {
+  AddNodes,
+  DelNode,
+  GetGroup,
+  SetGroup,
+  UpdateNode,
+  getNodes,
+} from "@/api/subcription/node";
 
 interface GroupNode {
-  ID: number;
+  ID?: number;
   Name: string;
-  Nodes :Node[];
 }
-interface Node {
+
+interface NodeItem {
   ID: number;
   Name: string;
   Link: string;
-  CreateDate: string;
-  GroupNodes?: GroupNode[]; // 分组信息
-  
+  CreatedAt?: string;
+  CreateDate?: string;
+  GroupNodes?: GroupNode[];
 }
-interface NodeInfo {
-    ID?: number // 编辑时需要传入ID
-    Title?:string 
-    Name?: string
-    Link: string
-    GroupName?: string[] // 分组名称
-}
-onMounted(async() => {  // 页面开始执行函数
-   getnodes()
-   GetGroups()
-})
-const dialogMode = ref<'add' | 'edit'>('add');
 
-// --- 表格选择与操作相关数据 ---
-const multipleSelection = ref<Node[]>([]); // Stores selected table items
-const multipleTable = ref<InstanceType<typeof ElTable> | null>(null)
+type DialogMode = "add" | "edit";
 
+const loading = ref(false);
+const saving = ref(false);
+const activeGroup = ref("全部");
+const protocolFilter = ref("全部");
+const searchKeyword = ref("");
+const nodes = ref<NodeItem[]>([]);
+const groups = ref<string[]>([]);
+const selectedRows = ref<NodeItem[]>([]);
+const tableRef = ref<any>(null);
 
-const tableRefs = ref<{ [key: string]: any }>({}); // Stores references to each el-table
-// --- 表格选择与操作相关数据结束 ---
-// const NodeNewLinkInput = ref("")
-// const NodeNewNameInput = ref("")
-const NodeGroupInput = ref("")
-const tableData = ref<Node[]>([])
-// 分组列表临时存放数据
-const tableDataTemp = ref<Node[]>([])
-// 分组列表临时存放数据
-const activeName = ref('全部')
-const Nodedialog = ref (false); // 弹窗是否可见
-const Groupdialog = ref (false); // 弹窗是否可见
-const NodeForm = ref<NodeInfo>({
-    Title: '',
-    Name: '',
-    Link: '',
-    GroupName: [],
-  })
-const allGroupNames = ref<string[]>([]); // 所有分组名称
-const allNodes = ref<string[]>([]); // 所有节点
-const nodelistShow = ref(false); // 节点列表
-const SelectionNodeGroups = ref<string[]>([]); // 选中的分组
-const SelectionNode = ref(''); // 选中的节点
+const nodeDialogVisible = ref(false);
+const groupDialogVisible = ref(false);
+const dialogMode = ref<DialogMode>("add");
+const nodeForm = reactive({
+  ID: 0,
+  Name: "",
+  Link: "",
+  selectedGroups: [] as string[],
+  newGroups: "",
+});
+const groupForm = reactive({
+  nodeName: "",
+  selectedGroups: [] as string[],
+  newGroups: "",
+});
 
-// const SelectionNodes = ref([]); // 选中的节点
-const RadioGroup = ref("1"); // 分组单选框
-// 将所有输入的值清空
-function ClearInput() {
-  SelectionNode.value = ''; // 清空选中的节点
-  NodeForm.value = { // 清空节点链接输入框
-    Title: '',
-    Name: '',
-    Link: '',
-    GroupName: [],
-  }
-  NodeGroupInput.value = ''; // 清空创建分组输入框
-  SelectionNodeGroups.value = []; // 清空选中的分组
-  nodelistShow.value = false; // 隐藏节点列表
-  Nodedialog.value = false; // 关闭节点添加弹窗
-  Groupdialog.value = false; // 关闭分组绑定弹窗
-  
-}
-async function getnodes() {
-  const {data} = await getNodes();
-  if (data.length > 0) tableDataTemp.value = tableData.value = data
-  allNodes.value = []; // 清空 allNodes 数组
-  data.forEach((item:any) => {
-      allNodes.value.push(item.Name); // 将所有节点添加到 allNodes 中
+const protocolOptions = computed(() => {
+  const options = new Set<string>(["全部"]);
+  nodes.value.forEach((item) => options.add(getProtocolLabel(item.Link)));
+  return Array.from(options);
+});
+
+const groupCounts = computed(() => {
+  const map = new Map<string, number>();
+  groups.value.forEach((item) => map.set(item, 0));
+  nodes.value.forEach((node) => {
+    node.GroupNodes?.forEach((group) => {
+      map.set(group.Name, (map.get(group.Name) ?? 0) + 1);
+    });
   });
-  
-} 
-async function GetGroups() {
-  const {data} = await GetGroup();
-  if (Array.isArray(data) && data.length > 0) {
-  allGroupNames.value=data; // 将所有分组名称添加到 allGroupNames 中
+  return map;
+});
 
+const groupedNodeCount = computed(
+  () => nodes.value.filter((item) => (item.GroupNodes?.length ?? 0) > 0).length
+);
+const xhttpCount = computed(() => nodes.value.filter((item) => isXhttpNode(item.Link)).length);
+const filteredNodes = computed(() => {
+  const keyword = searchKeyword.value.trim().toLowerCase();
+  return nodes.value.filter((item) => {
+    const groupMatch =
+      activeGroup.value === "全部" ||
+      item.GroupNodes?.some((group) => group.Name === activeGroup.value);
+    const protocolMatch =
+      protocolFilter.value === "全部" || getProtocolLabel(item.Link) === protocolFilter.value;
+    const keywordMatch =
+      !keyword ||
+      item.Name.toLowerCase().includes(keyword) ||
+      item.Link.toLowerCase().includes(keyword) ||
+      getGroupNames(item).join(" ").toLowerCase().includes(keyword);
+    return groupMatch && protocolMatch && keywordMatch;
+  });
+});
+
+const metricCards = computed(() => [
+  { label: "全部节点", value: nodes.value.length, icon: Files, tone: "blue" },
+  { label: "已分组", value: groupedNodeCount.value, icon: FolderOpened, tone: "green" },
+  { label: "xhttp", value: xhttpCount.value, icon: CircleCheck, tone: "amber" },
+  { label: "已选择", value: selectedRows.value.length, icon: CopyDocument, tone: "rose" },
+]);
+
+onMounted(() => {
+  refreshData();
+});
+
+async function refreshData() {
+  loading.value = true;
+  try {
+    const [nodeResult, groupResult] = await Promise.all([getNodes(), GetGroup()]);
+    nodes.value = Array.isArray(nodeResult.data) ? nodeResult.data : [];
+    groups.value = Array.isArray(groupResult.data) ? groupResult.data : [];
+    if (activeGroup.value !== "全部" && !groups.value.includes(activeGroup.value)) {
+      activeGroup.value = "全部";
+    }
+  } finally {
+    loading.value = false;
+  }
 }
-  RadioGroup.value = allGroupNames.value.length > 0 ? "1" : "2"; // 自动选择单选框值
-  // console.log("单选框",RadioGroup.value);
-  
+
+function openAddDialog() {
+  dialogMode.value = "add";
+  Object.assign(nodeForm, {
+    ID: 0,
+    Name: "",
+    Link: "",
+    selectedGroups: activeGroup.value === "全部" ? [] : [activeGroup.value],
+    newGroups: "",
+  });
+  nodeDialogVisible.value = true;
 }
 
-
-const handleAddNode = () => {
-  dialogMode.value = 'add';
-  Nodedialog.value = true;
-  NodeForm.value = {
-    Title: '添加节点',
-    Name: '',
-    Link: '',
-    GroupName: [],
-  };
-  SelectionNodeGroups.value = [];
-  NodeGroupInput.value = '';
-};
-
-const handleEditNode = (row: Node) => {  
-  // NodeNewNameInput.value = row.Name; // 编辑时使用原名称
-  // NodeNewLinkInput.value = row.Link; // 编辑时使用原链接
-  dialogMode.value = 'edit';
-  Nodedialog.value = true;
-  NodeForm.value = {
+function openEditDialog(row: NodeItem | any) {
+  dialogMode.value = "edit";
+  Object.assign(nodeForm, {
     ID: row.ID,
-    Title: '编辑节点',
     Name: row.Name,
     Link: row.Link,
-    GroupName: (row.GroupNodes || []).map(g => g.Name),
-  };
-  SelectionNodeGroups.value = NodeForm.value.GroupName || [];
-  SelectionNode.value = row.Name;
-};
-const SubmitNodeForm = async (row:any) => {
-  const isAdd = dialogMode.value === 'add';
-  let links = NodeForm.value.Link.trim().split(/[\n,]/).map(item => item.trim()).filter(item => item);
-  if (isAdd && links.length === 0) {
-    ElMessage.warning('节点链接不能为空');
+    selectedGroups: getGroupNames(row),
+    newGroups: "",
+  });
+  nodeDialogVisible.value = true;
+}
+
+async function submitNode() {
+  const links = splitNodeLinks(nodeForm.Link);
+  const group = collectGroups(nodeForm.selectedGroups, nodeForm.newGroups).join(",");
+  if (dialogMode.value === "add" && !links.length) {
+    ElMessage.warning("请至少输入一个节点链接");
     return;
   }
+  if (dialogMode.value === "edit") {
+    if (!nodeForm.Name.trim()) {
+      ElMessage.warning("节点名称不能为空");
+      return;
+    }
+    if (!nodeForm.Link.trim()) {
+      ElMessage.warning("节点链接不能为空");
+      return;
+    }
+  }
 
+  saving.value = true;
   try {
-    if (isAdd) {
-      for (const link of links) {
-        await AddNodes({
-          link,
-          group: RadioGroup.value === '1' ? SelectionNodeGroups.value.join(',') : NodeGroupInput.value,
-        });
-      }
-      ElMessage.success('节点添加成功');
+    if (dialogMode.value === "add") {
+      await Promise.all(links.map((link) => AddNodes({ link, group })));
+      ElMessage.success(`已导入 ${links.length} 个节点`);
     } else {
       await UpdateNode({
-        id:NodeForm.value.ID,
-        name: NodeForm.value.Name, // 新名称
-        link: NodeForm.value.Link, // 新链接
-        group: RadioGroup.value === '1' ? SelectionNodeGroups.value.join(',') : NodeGroupInput.value,
+        id: nodeForm.ID,
+        name: nodeForm.Name.trim(),
+        link: nodeForm.Link.trim(),
+        group,
       });
-      ElMessage.success('节点更新成功');
+      ElMessage.success("节点已更新");
     }
-
-
-  } catch (err) {
-    ElMessage.error(`${isAdd ? '添加' : '更新'}失败`);
+    nodeDialogVisible.value = false;
+    await refreshData();
+  } finally {
+    saving.value = false;
   }
-  getnodes();
-  GetGroups();
-  ClearInput();
-};
+}
 
-// const AddNode = async() => {
-//   // 多节点链接输入处理
-//   let NodeLinkInputs = NodeNewLinkInput.value.trim().split(/[\n,]/); // 使用换行符或逗号分隔输入的节点链接
-//   NodeLinkInputs = NodeLinkInputs.map((item) => item.trim()).filter((item) => item !== ''); // 去除空白和重复的链接
-//   if (NodeNewLinkInput.value.trim() === '') {
-//     ElMessage.warning('节点链接不能为空');
-//     return;
-//   }
+function openGroupDialog(row?: NodeItem | any) {
+  const target = row ?? selectedRows.value[0];
+  Object.assign(groupForm, {
+    nodeName: target?.Name ?? "",
+    selectedGroups: target ? getGroupNames(target) : activeGroup.value === "全部" ? [] : [activeGroup.value],
+    newGroups: "",
+  });
+  groupDialogVisible.value = true;
+}
 
-//   try {
-//     // 多节点同步循环添加节点
-//     for(const link of NodeLinkInputs) {
-//       if (link) {
-//           const newNode = {
-//           link: link.trim(), // 节点链接
-//           group: SelectionNodeGroups.value.join(','), // 选中的分组
-//           };
-//           await AddNodes(newNode).then(() => {
-//           ElMessage.success('节点添加成功');
-//           Nodedialog.value = false; // 关闭弹窗
-//           });
-//       }
-//     }
-//     // getnodes(); // 刷新节点列表
-//     // GetGroups(); // 刷新分组列表
-//   } catch (error) {
-//     console.error('添加节点失败:', error);
-//     // ElMessage.error('添加节点失败，请稍后再试');
-//   }
-//   getnodes(); // 刷新节点列表
-//   GetGroups(); // 刷新分组列表
-//   ClearInput(); // 清空所有输入
-// }
-const AddGroup = async() => {
-  console.log(SelectionNode.value);
+function syncGroupForm() {
+  const target = nodes.value.find((item) => item.Name === groupForm.nodeName);
+  groupForm.selectedGroups = target ? getGroupNames(target) : [];
+}
 
+async function submitGroupBinding() {
+  if (!groupForm.nodeName) {
+    ElMessage.warning("请先选择节点");
+    return;
+  }
+  const group = collectGroups(groupForm.selectedGroups, groupForm.newGroups).join(",");
+  if (!group) {
+    ElMessage.warning("请至少选择或输入一个分组");
+    return;
+  }
+
+  saving.value = true;
   try {
-    // 检查是否选择了已有分组或输入了新分组名
-    console.log(RadioGroup.value, SelectionNodeGroups.value, NodeGroupInput.value);
-    
-    if (RadioGroup.value === "1" && SelectionNodeGroups.value.length === 0) {
-      ElMessage.warning('你还没有选择分组');
-      return;
-    }
-    if (RadioGroup.value === "2"&&NodeGroupInput.value.trim() === '') {
-      ElMessage.warning('创建的分组名不能为空');
-      return;
+    await SetGroup({ name: groupForm.nodeName, group });
+    ElMessage.success("分组已更新");
+    groupDialogVisible.value = false;
+    await refreshData();
+  } finally {
+    saving.value = false;
   }
-      if (SelectionNode.value.length > 0) { // 如果没有选择节点
-      const newNode = {
-      name: SelectionNode.value, // 节点链接
-      group: RadioGroup.value == '1' ?SelectionNodeGroups.value.join(','):NodeGroupInput.value, // 条件选择已有节点|创建分组
-      };
-      await SetGroup(newNode).then(() => {
-      ElMessage.success('分组绑定成功');
-            });
-    }
-  } catch (error) {
-    console.error('添加分组失败:', error);
-    // ElMessage.error('添加分组失败');
+}
+
+async function deleteNode(row: NodeItem | any) {
+  await ElMessageBox.confirm(`确定删除「${row.Name}」吗？`, "删除节点", {
+    confirmButtonText: "删除",
+    cancelButtonText: "取消",
+    type: "warning",
+  });
+  await DelNode({ id: row.ID });
+  ElMessage.success("节点已删除");
+  await refreshData();
+}
+
+async function deleteSelected() {
+  if (!selectedRows.value.length) {
+    ElMessage.warning("请先选择节点");
+    return;
   }
-  getnodes(); // 刷新节点列表
-  GetGroups(); // 刷新分组列表
-  ClearInput(); // 清空所有输入
+  await ElMessageBox.confirm(`确定删除选中的 ${selectedRows.value.length} 个节点吗？`, "批量删除", {
+    confirmButtonText: "删除",
+    cancelButtonText: "取消",
+    type: "warning",
+  });
+  await Promise.all(selectedRows.value.map((item) => DelNode({ id: item.ID })));
+  selectedRows.value = [];
+  ElMessage.success("已删除选中节点");
+  await refreshData();
 }
-// 表格时间格式化
-const Timeformatter  = (row:any)=>{
-  row.CreatedAt = new Date(row.CreatedAt).toLocaleString(); // 转换为本地时间字符串
-  return row.CreatedAt;
-  
+
+function selectCurrentPage() {
+  nextTick(() => {
+    filteredNodes.value.forEach((row) => tableRef.value?.toggleRowSelection(row, true));
+  });
 }
-// 选择已有节点显示所属分组
-const  handleShownodeGroupList =()=>{
-  // 显示这个节点关联的分组
-  const nodeData = allNodes.value.find(node => node === SelectionNode.value);
-  SelectionNodeGroups.value = []
-  tableData.value.forEach((item, ) => {
-    if (item.Name === nodeData && (item.GroupNodes?.length ?? 0) > 0) {
-      // console.log(`节点 ${nodeData} 的分组:`, item.GroupNodes);
-      item.GroupNodes?.forEach((item) => {
-        SelectionNodeGroups.value.push(item.Name); // 将分组名称添加到 SelectionNodeGroups 中
-      });
-    } 
-});
+
+function clearSelection() {
+  tableRef.value?.clearSelection();
+  selectedRows.value = [];
 }
-// 表格所属分组格式化
-const Groupformatter = (row:any,cellValue:any) =>{
-  const data = row.GroupNodes || [];
-  if (!Array.isArray(data) || data.length === 0) {
-    return '未分组'; // 如果没有分组，返回默认值
+
+function handleSelectionChange(selection: NodeItem[]) {
+  selectedRows.value = selection;
+}
+
+async function copyNode(row: NodeItem | any) {
+  await copyText(row.Link);
+}
+
+async function copySelected() {
+  if (!selectedRows.value.length) {
+    ElMessage.warning("请先选择节点");
+    return;
   }
- return data.map((group: any) => group.Name).join(', ');
+  await copyText(selectedRows.value.map((item) => item.Link).join("\n"));
 }
-// --- 复制链接 (保持不变) ---
-const copyUrl = (url: string) => {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(url)
-      .then(() => {
-        ElMessage.success('链接已复制到剪贴板！');
-      })
-      .catch(err => {
-        console.error('复制失败:', err);
-        ElMessage.error('复制失败！请手动复制。');
-      });
-  } else {
-    const textarea = document.createElement('textarea');
-    textarea.value = url;
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
     document.body.appendChild(textarea);
     textarea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textarea);
+  }
+  ElMessage.success("已复制到剪贴板");
+}
+
+function splitNodeLinks(value: string) {
+  return value
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function collectGroups(selected: string[], extra: string) {
+  const next = new Set<string>();
+  selected.forEach((item) => item.trim() && next.add(item.trim()));
+  extra
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .forEach((item) => next.add(item));
+  return Array.from(next);
+}
+
+function getGroupNames(row: NodeItem | any): string[] {
+  return row.GroupNodes?.map((item: GroupNode) => item.Name).filter(Boolean) ?? [];
+}
+
+function getProtocol(link: string) {
+  return link.split("://")[0]?.trim().toUpperCase() || "UNKNOWN";
+}
+
+function getProtocolLabel(link: string) {
+  if (isXhttpNode(link)) return "VLESS xhttp";
+  return getProtocol(link);
+}
+
+function decodeLinkBody(link: string) {
+  const raw = link.split("://")[1] ?? "";
+  try {
+    return decodeURIComponent(atob(raw));
+  } catch {
     try {
-      document.execCommand('copy');
-      ElMessage.success('链接已复制到剪贴板！');
-    } catch (err) {
-      ElMessage.warning('复制失败！');
-    } finally {
-      document.body.removeChild(textarea);
+      return decodeURIComponent(link);
+    } catch {
+      return link;
     }
   }
-};
-// 复制表格节点信息
-const copyInfo = (row: Node) => {
-  copyUrl(row.Link);
-};
-const handleDel = async (row: Node) => {
-  try {
-    await ElMessageBox.confirm(
-      `你是否要删除 ${row.Name} ?`,
-      '提示',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    );
-    await DelNode({ id: row.ID });
-    ElMessage.success('删除成功');
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error("删除失败:", error);
-      ElMessage.error('删除失败！');
-    }
-  }
-  // 刷新节点列表
-  await GetGroups(); // 刷新分组列表
-  await getnodes(); // 刷新节点列表
-  ClearInput(); // 清空所有输入
-};
-const selectDel = async () => {
-  
-  if (multipleSelection.value.length === 0) {
-    ElMessage.warning('请选择要删除的节点！');
-    return;
-  }
-  try {
-    await ElMessageBox.confirm(
-      `你是否要删除选中的 ${multipleSelection.value.length} 条节点 ?`,
-      '提示',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    );
+}
 
-    const IDs: number[] = []
+function isXhttpNode(link: string) {
+  return decodeLinkBody(link).toLowerCase().includes("type=xhttp");
+}
 
-    for (const item of multipleSelection.value) {
-      await DelNode({ id: item.ID });
-       IDs.push(item.ID); // 收集所有已删除的节点ID
-    }
-    ElMessage.success('批量删除成功');
-    // 从 tableData 中删除已删除的节点
-    tableData.value = tableData.value.filter(item => !IDs.includes(item.ID));
-; 
-
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error("批量删除失败:", error);
-      ElMessage.error('批量删除失败！');
-    }
-  }
-    // 刷新节点列表
-  await GetGroups(); // 刷新分组列表
-  await getnodes();
-};
-// 全选
-const selectAll = () => {
-  nextTick(() => {
-const table = multipleTable.value
-  if (table) {
-      // 否则全选
-      tableData.value.forEach(row => {
-        table.toggleRowSelection(row, true)
-      })
-  }
-  });
-};
-// 取消全选 
-const selectClear = () => {
-  nextTick(() => {
-    const table = multipleTable.value;
-    if (table) {
-      table.clearSelection();
-    }
-  });
-};
-// --- 表格选择操作 (保持不变) ---
-const setTableRef = (el: any, name: string) => {
-  if (el) {
-    tableRefs.value[name] = el;
-  } else {
-    delete tableRefs.value[name];
-  }
-};
-//批量复制
-const selectCopy = async () => {
-  if (multipleSelection.value.length === 0) {
-    ElMessage.warning('请选择要复制的节点！');
-    return;
-  }
-  try {
-    copyUrl(multipleSelection.value.map(item => item.Link).join('\n'));
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error("批量复制失败:", error);
-      ElMessage.error('批量复制失败');
-    }
-  }
-};
-const handleSelectionChange = (val: Node[]) => {
-  multipleSelection.value = val;
-};
-
-watch(activeName, (newVal) => {
-  if (newVal === '全部') {
-    tableData.value = tableDataTemp.value;
-  } else {
-    tableData.value = tableDataTemp.value.filter(item => {
-      return item.GroupNodes?.some(group => group.Name === newVal);
-    });
-  }
-});
-
-
+function formatDate(row: NodeItem | any) {
+  const value = row.CreatedAt ?? row.CreateDate;
+  return value ? new Date(value).toLocaleString() : "-";
+}
 </script>
 
 <template>
-  <div>
- <el-dialog v-model="Nodedialog" :title="NodeForm.Title" width="80%">
-  <el-input
-    v-model="NodeForm.Link"
-    placeholder="请输入节点链接，支持多行使用回车或逗号分开"
-    type="textarea"
-    style="margin-bottom: 10px"
-    :autosize="{ minRows: 2, maxRows: 10 }"
-    v-if="dialogMode === 'add'"
-  />
+  <div class="node-page">
+    <section class="page-hero">
+      <div>
+        <span class="eyebrow">节点管理</span>
+        <h1>整理节点、分组和 xhttp 支持</h1>
+        <p>导入节点后可按协议、分组和关键字筛选。VLESS xhttp 会在 Clash Verge Rev / Mihomo 配置中生成 xhttp-opts。</p>
+      </div>
+      <div class="hero-actions">
+        <el-button :icon="Refresh" @click="refreshData">刷新</el-button>
+        <el-button type="primary" :icon="Plus" @click="openAddDialog">导入节点</el-button>
+      </div>
+    </section>
 
-<el-input
-  v-model="NodeForm.Name"
-  placeholder="节点名称（编辑时）"
-  style="margin-bottom: 10px"
-  v-if="dialogMode === 'edit'"
-/>
-  <el-input
-    v-model="NodeForm.Link"
-    placeholder="请输入节点链接，支持多行使用回车或逗号分开"
-    type="textarea"
-    style="margin-bottom: 10px"
-    :autosize="{ minRows: 2, maxRows: 10 }"
-    v-if="dialogMode === 'edit'"
-  />
+    <section class="metric-grid">
+      <div v-for="item in metricCards" :key="item.label" class="metric-card" :class="`tone-${item.tone}`">
+        <div class="metric-icon">
+          <el-icon><component :is="item.icon" /></el-icon>
+        </div>
+        <div>
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+        </div>
+      </div>
+    </section>
 
-  <!-- 分组部分 -->
-  <el-radio v-model="RadioGroup" label="1" v-if="allGroupNames.length > 0">选择已有分组</el-radio>
-  <el-radio v-model="RadioGroup" label="2">创建新分组</el-radio>
+    <section class="workspace-panel">
+      <aside class="group-sidebar">
+        <div class="sidebar-title">分组</div>
+        <button :class="{ active: activeGroup === '全部' }" @click="activeGroup = '全部'">
+          <span>全部</span>
+          <strong>{{ nodes.length }}</strong>
+        </button>
+        <button
+          v-for="group in groups"
+          :key="group"
+          :class="{ active: activeGroup === group }"
+          @click="activeGroup = group"
+        >
+          <span>{{ group }}</span>
+          <strong>{{ groupCounts.get(group) ?? 0 }}</strong>
+        </button>
+      </aside>
 
-  <div v-if="RadioGroup === '1' && allGroupNames.length > 0">
-    <el-select v-model="SelectionNodeGroups" multiple placeholder="选择已有分组" class="default">
-      <el-option v-for="item in allGroupNames" :key="item" :label="item" :value="item" />
-    </el-select>
-  </div>
+      <main class="table-panel">
+        <div class="toolbar">
+          <el-input
+            v-model="searchKeyword"
+            :prefix-icon="Search"
+            clearable
+            placeholder="搜索节点名称、链接或分组"
+            class="search-input"
+          />
+          <el-select v-model="protocolFilter" class="protocol-select" placeholder="协议">
+            <el-option v-for="item in protocolOptions" :key="item" :label="item" :value="item" />
+          </el-select>
+          <div class="toolbar-actions">
+            <el-button :icon="CopyDocument" @click="copySelected">复制选中</el-button>
+            <el-button :icon="FolderOpened" @click="openGroupDialog()">绑定分组</el-button>
+            <el-button type="danger" :icon="Delete" @click="deleteSelected">删除选中</el-button>
+          </div>
+        </div>
 
-  <el-input v-if="RadioGroup === '2'" v-model="NodeGroupInput" placeholder="输入要创建的分组名" class="default" />
+        <el-table
+          ref="tableRef"
+          v-loading="loading"
+          :data="filteredNodes"
+          row-key="ID"
+          height="calc(100vh - 390px)"
+          @selection-change="handleSelectionChange"
+        >
+          <el-table-column type="selection" width="44" />
+          <el-table-column label="节点" min-width="240" sortable prop="Name">
+            <template #default="{ row }">
+              <div class="node-name">
+                <strong>{{ row.Name }}</strong>
+                <span>{{ getProtocolLabel(row.Link) }}</span>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="分组" min-width="180">
+            <template #default="{ row }">
+              <div class="tag-list" v-if="getGroupNames(row).length">
+                <el-tag v-for="group in getGroupNames(row)" :key="group" effect="plain" round>{{ group }}</el-tag>
+              </div>
+              <span v-else class="muted">未分组</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="节点链接" min-width="360" show-overflow-tooltip>
+            <template #default="{ row }">
+              <code class="node-link">{{ row.Link }}</code>
+            </template>
+          </el-table-column>
+          <el-table-column label="创建时间" width="180" :formatter="formatDate" />
+          <el-table-column label="操作" width="230" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" :icon="Edit" @click="openEditDialog(row)">编辑</el-button>
+              <el-button link type="primary" :icon="CopyDocument" @click="copyNode(row)">复制</el-button>
+              <el-button link type="primary" :icon="FolderOpened" @click="openGroupDialog(row)">分组</el-button>
+              <el-button link type="danger" :icon="Delete" @click="deleteNode(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
 
-  <el-button type="primary" @click="SubmitNodeForm">{{ dialogMode === 'add' ? '添加' : '更新' }}</el-button>
-  <el-button @click="Nodedialog = false">取消</el-button>
-</el-dialog>
+        <div class="table-footer">
+          <span>当前显示 {{ filteredNodes.length }} 个节点，已选择 {{ selectedRows.length }} 个</span>
+          <div>
+            <el-button link type="primary" @click="selectCurrentPage">选择当前结果</el-button>
+            <el-button link @click="clearSelection">清空选择</el-button>
+          </div>
+        </div>
+      </main>
+    </section>
 
+    <el-dialog v-model="nodeDialogVisible" :title="dialogMode === 'add' ? '导入节点' : '编辑节点'" width="720px">
+      <el-form label-position="top">
+        <el-form-item v-if="dialogMode === 'edit'" label="节点名称">
+          <el-input v-model="nodeForm.Name" placeholder="节点名称" />
+        </el-form-item>
+        <el-form-item :label="dialogMode === 'add' ? '节点链接' : '节点链接'">
+          <el-input
+            v-model="nodeForm.Link"
+            type="textarea"
+            :autosize="{ minRows: 5, maxRows: 12 }"
+            placeholder="支持多行或英文逗号分隔。添加时会逐条导入，编辑时只保存当前节点。"
+          />
+        </el-form-item>
+        <el-form-item label="分组">
+          <el-select
+            v-model="nodeForm.selectedGroups"
+            multiple
+            filterable
+            clearable
+            class="full-width"
+            placeholder="选择已有分组"
+          >
+            <el-option v-for="group in groups" :key="group" :label="group" :value="group" />
+          </el-select>
+          <el-input
+            v-model="nodeForm.newGroups"
+            class="full-width"
+            placeholder="新分组，可用逗号或换行分隔"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="nodeDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="submitNode">保存</el-button>
+      </template>
+    </el-dialog>
 
-  <!-- 显示表格数据 -->
-  <el-card>
-    <el-tabs v-model="activeName" >
-      <el-tab-pane :label="`全部(${allNodes.length})`" name="全部" />
-      <el-tab-pane :label="item" :name="item" v-for="item in allGroupNames" :key="item" />
-    </el-tabs>
-      <el-button type="primary" @click="handleAddNode">添加节点</el-button>
-      <div style="margin-bottom: 10px"></div>
-      <el-table
-      ref="multipleTable"
-    :data="tableData"
-    tooltip-effect="dark"
-    stripe
-    style="width: 100%"
-    row-key="ID" 
-    :tree-props="{children: 'Nodes'}"
-    @selection-change="handleSelectionChange"
-    >
-        <el-table-column
-      type="selection"
-      width="55">
-    </el-table-column>
-
-    <el-table-column
-      type="index"
-      >
-    </el-table-column>
-    <el-table-column
-      prop="Name"
-      label="节点名"
-      sortable
-      >
-    <template #default="{row}">
-      <el-tag effect="plain" >{{row.Name}}</el-tag>
-        </template>
-    </el-table-column>
-    <el-table-column
-      prop="Link"
-      label="链接"
-      :show-overflow-tooltip="true"
-      >
-          <template #default="{row}">
-      <el-tag effect="plain" type="success" >{{row.Link}}</el-tag>
-        </template>
-    </el-table-column>
-    
-        <el-table-column
-      prop="CreatedAt"
-      label="创建时间"
-      :formatter="Timeformatter"
-      sortable
-      show-overflow-tooltip>
-    </el-table-column>
-            <el-table-column
-      label="所属分组"
-      :formatter="Groupformatter"
-      show-overflow-tooltip>
-    </el-table-column>
-                <el-table-column  label="操作" width="120">
-              <template #default="scope">
-                <el-button link type="primary" size="small" @click="handleEditNode(scope.row)">编辑</el-button>
-                <el-button link type="primary" size="small" @click="copyInfo(scope.row)">复制</el-button>
-                <el-button link type="primary" size="small" @click="handleDel(scope.row)">删除</el-button>
-              </template>
-            </el-table-column>
-  </el-table>
-   <div style="margin-top: 20px" />
-   <el-button type="info" @click="selectAll">全选</el-button>
-   <el-button type="warning" @click="selectClear">取消选中</el-button>
-      <el-button type="primary" @click="selectCopy">复制选中</el-button>
-      <el-button type="danger" @click="selectDel">删除选中</el-button>
-      <div style="margin-top: 20px" />
-  </el-card>
-  <!-- 显示表格数据结束 -->
+    <el-dialog v-model="groupDialogVisible" title="绑定分组" width="560px">
+      <el-form label-position="top">
+        <el-form-item label="节点">
+          <el-select
+            v-model="groupForm.nodeName"
+            filterable
+            class="full-width"
+            placeholder="选择节点"
+            @change="syncGroupForm"
+          >
+            <el-option v-for="item in nodes" :key="item.ID" :label="item.Name" :value="item.Name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="分组">
+          <el-select
+            v-model="groupForm.selectedGroups"
+            multiple
+            filterable
+            clearable
+            class="full-width"
+            placeholder="选择已有分组"
+          >
+            <el-option v-for="group in groups" :key="group" :label="group" :value="group" />
+          </el-select>
+          <el-input
+            v-model="groupForm.newGroups"
+            class="full-width"
+            placeholder="新分组，可用逗号或换行分隔"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="groupDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="submitGroupBinding">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
-<style>
- /* 创建默认样式 */
- .default {
-  font-size: 14px;
-  color: #333;
-  line-height: 1.6;
+
+<style scoped>
+.node-page {
+  min-height: 100%;
+  padding: 18px;
+  color: #1f2937;
+  background:
+    linear-gradient(180deg, rgba(240, 249, 255, 0.95), rgba(248, 250, 252, 0.5) 280px),
+    #f6f8fb;
+}
+
+.page-hero,
+.workspace-panel,
+.metric-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.page-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 24px;
+}
+
+.eyebrow {
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.page-hero h1 {
+  margin: 8px 0 6px;
+  font-size: 25px;
+  font-weight: 760;
+}
+
+.page-hero p {
+  max-width: 760px;
+  margin: 0;
+  color: #64748b;
+}
+
+.hero-actions,
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.metric-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px;
+}
+
+.metric-card span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.metric-card strong {
+  display: block;
+  margin-top: 2px;
+  color: #111827;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.metric-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 8px;
+  font-size: 21px;
+}
+
+.tone-blue .metric-icon {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.tone-green .metric-icon {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.tone-amber .metric-icon {
+  color: #b45309;
+  background: #fef3c7;
+}
+
+.tone-rose .metric-icon {
+  color: #be123c;
+  background: #ffe4e6;
+}
+
+.workspace-panel {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  min-height: calc(100vh - 270px);
+  overflow: hidden;
+}
+
+.group-sidebar {
+  padding: 16px;
+  border-right: 1px solid #e5e7eb;
+  background: #fbfdff;
+}
+
+.sidebar-title {
   margin-bottom: 10px;
- }
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.group-sidebar button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: #334155;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.group-sidebar button:hover {
+  background: #eef6ff;
+}
+
+.group-sidebar button.active {
+  color: #1d4ed8;
+  background: #dbeafe;
+  font-weight: 700;
+}
+
+.group-sidebar strong {
+  font-size: 12px;
+}
+
+.table-panel {
+  min-width: 0;
+  padding: 16px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.search-input {
+  max-width: 420px;
+}
+
+.protocol-select {
+  width: 160px;
+}
+
+.toolbar-actions {
+  margin-left: auto;
+}
+
+.node-name strong {
+  display: block;
+  color: #111827;
+}
+
+.node-name span,
+.muted {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.node-link {
+  color: #334155;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.table-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  color: #64748b;
+}
+
+.full-width {
+  width: 100%;
+  margin-top: 8px;
+}
+
+@media (max-width: 1100px) {
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .group-sidebar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    border-right: 0;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .sidebar-title {
+    width: 100%;
+    margin-bottom: 0;
+  }
+
+  .group-sidebar button {
+    width: auto;
+    margin-bottom: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .node-page {
+    padding: 12px;
+  }
+
+  .page-hero,
+  .toolbar,
+  .table-footer {
+    display: block;
+  }
+
+  .hero-actions,
+  .toolbar-actions {
+    margin-top: 14px;
+  }
+
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .search-input,
+  .protocol-select {
+    width: 100%;
+    max-width: none;
+    margin-bottom: 8px;
+  }
+}
 </style>
