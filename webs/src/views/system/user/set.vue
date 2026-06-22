@@ -215,6 +215,11 @@ function formatDate(value?: string) {
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
 }
+
+function formatDigest(value?: string) {
+  if (!value) return "未获取到";
+  return value.length > 22 ? `${value.slice(0, 22)}...` : value;
+}
 </script>
 
 <template>
@@ -290,6 +295,18 @@ function formatDate(value?: string) {
           <div>
             <span>Docker 镜像</span>
             <strong>{{ updateInfo.dockerImage }}</strong>
+          </div>
+          <div>
+            <span>当前镜像 digest</span>
+            <strong :title="updateInfo.currentImageDigest || ''">
+              {{ formatDigest(updateInfo.currentImageDigest) }}
+            </strong>
+          </div>
+          <div>
+            <span>最新镜像 digest</span>
+            <strong :title="updateInfo.latestImageDigest || ''">
+              {{ formatDigest(updateInfo.latestImageDigest) }}
+            </strong>
           </div>
           <div>
             <span>当前容器</span>

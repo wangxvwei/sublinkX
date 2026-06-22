@@ -22,16 +22,18 @@ import (
 )
 
 type updateInfo struct {
-	CurrentVersion string `json:"currentVersion"`
-	LatestVersion  string `json:"latestVersion"`
-	HasUpdate      bool   `json:"hasUpdate"`
-	ReleaseURL     string `json:"releaseUrl"`
-	DockerImage    string `json:"dockerImage"`
-	UpdateCommand  string `json:"updateCommand"`
-	AutoUpdate     bool   `json:"autoUpdate"`
-	AutoUpdateMsg  string `json:"autoUpdateMessage"`
-	ContainerName  string `json:"containerName"`
-	Message        string `json:"message"`
+	CurrentVersion     string `json:"currentVersion"`
+	LatestVersion      string `json:"latestVersion"`
+	HasUpdate          bool   `json:"hasUpdate"`
+	ReleaseURL         string `json:"releaseUrl"`
+	DockerImage        string `json:"dockerImage"`
+	CurrentImageDigest string `json:"currentImageDigest"`
+	LatestImageDigest  string `json:"latestImageDigest"`
+	UpdateCommand      string `json:"updateCommand"`
+	AutoUpdate         bool   `json:"autoUpdate"`
+	AutoUpdateMsg      string `json:"autoUpdateMessage"`
+	ContainerName      string `json:"containerName"`
+	Message            string `json:"message"`
 }
 
 type updateApplyResult struct {
@@ -66,16 +68,34 @@ func CheckUpdate(currentVersion string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		socketPath := dockerSocketPath()
 		containerName := updateContainerName()
+		dockerImage := envOrDefault("DOCKER_IMAGE", "ghcr.io/wangxvwei/sublinkx")
 		info := updateInfo{
 			CurrentVersion: currentVersion,
-			DockerImage:    envOrDefault("DOCKER_IMAGE", "ghcr.io/wangxvwei/sublinkx"),
+			DockerImage:    dockerImage,
 			ContainerName:  containerName,
+			UpdateCommand:  fmt.Sprintf("docker pull %s && docker compose up -d", dockerImageWithTag(dockerImage)),
 		}
 		info.AutoUpdate, info.AutoUpdateMsg = dockerSocketReady(socketPath)
 
+		dockerCheckErr := ""
+		if info.AutoUpdate {
+			if err := fillDockerUpdateInfo(socketPath, containerName, &info); err == nil {
+				c.JSON(http.StatusOK, gin.H{
+					"code": "00000",
+					"data": info,
+					"msg":  "update check",
+				})
+				return
+			} else {
+				dockerCheckErr = err.Error()
+			}
+		}
+
 		latest, releaseURL, err := fetchLatestVersion()
 		if err != nil {
-			info.Message = err.Error()
+			if info.Message == "" {
+				info.Message = err.Error()
+			}
 			c.JSON(http.StatusOK, gin.H{
 				"code": "00000",
 				"data": info,
@@ -86,13 +106,21 @@ func CheckUpdate(currentVersion string) gin.HandlerFunc {
 
 		info.LatestVersion = latest
 		info.ReleaseURL = releaseURL
+		if dockerCheckErr != "" {
+			info.Message = fmt.Sprintf("Docker 镜像检查失败：%s；无法判断 latest 镜像是否更新", dockerCheckErr)
+			c.JSON(http.StatusOK, gin.H{
+				"code": "00000",
+				"data": info,
+				"msg":  "update check",
+			})
+			return
+		}
 		info.HasUpdate = compareVersion(latest, currentVersion) > 0
 		if info.HasUpdate {
 			info.Message = "发现新版本"
 		} else {
 			info.Message = "当前已是最新版本"
 		}
-		info.UpdateCommand = fmt.Sprintf("docker pull %s && docker compose up -d", dockerImageWithTag(info.DockerImage))
 
 		c.JSON(http.StatusOK, gin.H{
 			"code": "00000",
@@ -100,6 +128,52 @@ func CheckUpdate(currentVersion string) gin.HandlerFunc {
 			"msg":  "update check",
 		})
 	}
+}
+
+func fillDockerUpdateInfo(socketPath, containerName string, info *updateInfo) error {
+	docker, err := newDockerSocketClient(socketPath)
+	if err != nil {
+		return err
+	}
+
+	container, err := docker.inspectContainer(containerName)
+	if err != nil {
+		return fmt.Errorf("读取当前容器失败：%w", err)
+	}
+
+	imageInfo, err := docker.inspectImage(container.Image)
+	if err != nil {
+		return fmt.Errorf("读取当前镜像失败：%w", err)
+	}
+
+	targetImage := dockerImageWithTag(info.DockerImage)
+	latestDigest, err := docker.distributionDigest(targetImage)
+	if err != nil {
+		latestDigest, err = fetchRemoteImageDigest(targetImage)
+		if err != nil {
+			return fmt.Errorf("读取远端 latest 镜像失败：%w", err)
+		}
+	}
+
+	currentDigest := repoDigestForImage(imageInfo.RepoDigests, targetImage)
+	info.CurrentImageDigest = currentDigest
+	info.LatestImageDigest = latestDigest
+	info.LatestVersion = "latest@" + shortDigest(latestDigest)
+	info.ReleaseURL = fmt.Sprintf("https://github.com/%s/pkgs/container/sublinkx", envOrDefault("UPDATE_REPO", "wangxvwei/sublinkX"))
+
+	if currentDigest == "" {
+		info.HasUpdate = true
+		info.Message = "当前镜像缺少 digest 信息，建议更新到最新 latest 镜像"
+		return nil
+	}
+
+	info.HasUpdate = !sameDigest(currentDigest, latestDigest)
+	if info.HasUpdate {
+		info.Message = "发现新的 Docker 镜像"
+	} else {
+		info.Message = "当前已是最新镜像"
+	}
+	return nil
 }
 
 func UpdateStatus() gin.HandlerFunc {
@@ -271,6 +345,132 @@ func fetchLatestVersion() (string, string, error) {
 	return tags[0].Name, fmt.Sprintf("https://github.com/%s/releases", repo), nil
 }
 
+func fetchRemoteImageDigest(image string) (string, error) {
+	name, tag := splitImageTag(image)
+	registry, repository := splitRegistryRepository(name)
+	if registry == "" || repository == "" {
+		return "", fmt.Errorf("镜像地址格式不正确：%s", image)
+	}
+
+	digest, authHeader, err := requestManifestDigest(registry, repository, tag, "")
+	if err == nil {
+		return digest, nil
+	}
+	if authHeader == "" {
+		return "", err
+	}
+
+	token, tokenErr := fetchRegistryToken(authHeader)
+	if tokenErr != nil {
+		return "", tokenErr
+	}
+	return requestManifestDigestWithToken(registry, repository, tag, token)
+}
+
+func requestManifestDigest(registry, repository, tag, token string) (string, string, error) {
+	digest, authHeader, err := requestManifestDigestMethod(http.MethodHead, registry, repository, tag, token)
+	if err == nil {
+		return digest, authHeader, nil
+	}
+	if authHeader != "" {
+		return "", authHeader, err
+	}
+	return requestManifestDigestMethod(http.MethodGet, registry, repository, tag, token)
+}
+
+func requestManifestDigestWithToken(registry, repository, tag, token string) (string, error) {
+	digest, _, err := requestManifestDigest(registry, repository, tag, token)
+	return digest, err
+}
+
+func requestManifestDigestMethod(method, registry, repository, tag, token string) (string, string, error) {
+	manifestURL := fmt.Sprintf("https://%s/v2/%s/manifests/%s", registry, registryPath(repository), url.PathEscape(tag))
+	req, err := http.NewRequest(method, manifestURL, nil)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Accept", strings.Join([]string{
+		"application/vnd.oci.image.index.v1+json",
+		"application/vnd.oci.image.manifest.v1+json",
+		"application/vnd.docker.distribution.manifest.list.v2+json",
+		"application/vnd.docker.distribution.manifest.v2+json",
+	}, ", "))
+	req.Header.Set("User-Agent", "sublinkX-update-checker")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := updateHTTPClient.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+
+	authHeader := resp.Header.Get("Www-Authenticate")
+	if resp.StatusCode == http.StatusUnauthorized && authHeader != "" && token == "" {
+		return "", authHeader, fmt.Errorf("registry 需要认证")
+	}
+	if resp.StatusCode >= 300 {
+		return "", "", fmt.Errorf("registry 返回状态码 %d", resp.StatusCode)
+	}
+
+	digest := normalizeDigest(resp.Header.Get("Docker-Content-Digest"))
+	if digest == "" {
+		return "", "", fmt.Errorf("registry 没有返回 Docker-Content-Digest")
+	}
+	return digest, "", nil
+}
+
+func fetchRegistryToken(authHeader string) (string, error) {
+	params := parseAuthChallenge(authHeader)
+	realm := params["realm"]
+	if realm == "" {
+		return "", fmt.Errorf("registry 认证响应缺少 realm")
+	}
+
+	tokenURL, err := url.Parse(realm)
+	if err != nil {
+		return "", err
+	}
+	query := tokenURL.Query()
+	for _, key := range []string{"service", "scope"} {
+		if params[key] != "" {
+			query.Set(key, params[key])
+		}
+	}
+	tokenURL.RawQuery = query.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, tokenURL.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "sublinkX-update-checker")
+
+	resp, err := updateHTTPClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return "", fmt.Errorf("registry token 返回状态码 %d", resp.StatusCode)
+	}
+
+	var body struct {
+		Token       string `json:"token"`
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", err
+	}
+	if body.Token != "" {
+		return body.Token, nil
+	}
+	if body.AccessToken != "" {
+		return body.AccessToken, nil
+	}
+	return "", fmt.Errorf("registry token 响应为空")
+}
+
 func compareVersion(a, b string) int {
 	left := versionNumbers(a)
 	right := versionNumbers(b)
@@ -378,6 +578,17 @@ type dockerContainerInspect struct {
 	} `json:"NetworkSettings"`
 }
 
+type dockerImageInspect struct {
+	ID          string   `json:"Id"`
+	RepoDigests []string `json:"RepoDigests"`
+}
+
+type dockerDistributionInspect struct {
+	Descriptor struct {
+		Digest string `json:"digest"`
+	} `json:"Descriptor"`
+}
+
 func dockerSocketPath() string {
 	return envOrDefault("DOCKER_SOCKET", "/var/run/docker.sock")
 }
@@ -453,6 +664,25 @@ func (d *dockerSocketClient) inspectContainer(name string) (dockerContainerInspe
 	var result dockerContainerInspect
 	err := d.do(http.MethodGet, "/containers/"+url.PathEscape(strings.TrimPrefix(name, "/"))+"/json", nil, &result)
 	return result, err
+}
+
+func (d *dockerSocketClient) inspectImage(name string) (dockerImageInspect, error) {
+	var result dockerImageInspect
+	err := d.do(http.MethodGet, "/images/"+url.PathEscape(name)+"/json", nil, &result)
+	return result, err
+}
+
+func (d *dockerSocketClient) distributionDigest(image string) (string, error) {
+	var result dockerDistributionInspect
+	err := d.do(http.MethodGet, "/distribution/"+url.PathEscape(image)+"/json", nil, &result)
+	if err != nil {
+		return "", err
+	}
+	digest := normalizeDigest(result.Descriptor.Digest)
+	if digest == "" {
+		return "", fmt.Errorf("远端镜像没有返回 digest")
+	}
+	return digest, nil
 }
 
 func (d *dockerSocketClient) pullImage(image string) error {
@@ -711,6 +941,83 @@ func dockerImageWithTag(image string) string {
 		tag = "latest"
 	}
 	return name + ":" + tag
+}
+
+func splitRegistryRepository(name string) (string, string) {
+	parts := strings.SplitN(name, "/", 2)
+	if len(parts) == 2 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") || parts[0] == "localhost") {
+		return strings.ToLower(parts[0]), parts[1]
+	}
+	if len(parts) == 1 {
+		return "registry-1.docker.io", "library/" + parts[0]
+	}
+	return "registry-1.docker.io", name
+}
+
+func registryPath(repository string) string {
+	parts := strings.Split(repository, "/")
+	for index, item := range parts {
+		parts[index] = url.PathEscape(item)
+	}
+	return strings.Join(parts, "/")
+}
+
+func parseAuthChallenge(header string) map[string]string {
+	header = strings.TrimSpace(header)
+	if space := strings.IndexByte(header, ' '); space >= 0 {
+		header = header[space+1:]
+	}
+
+	result := map[string]string{}
+	for _, item := range strings.Split(header, ",") {
+		key, value, ok := strings.Cut(strings.TrimSpace(item), "=")
+		if !ok {
+			continue
+		}
+		result[strings.ToLower(strings.TrimSpace(key))] = strings.Trim(strings.TrimSpace(value), `"`)
+	}
+	return result
+}
+
+func repoDigestForImage(repoDigests []string, image string) string {
+	name, _ := splitImageTag(image)
+	name = strings.ToLower(name)
+	for _, item := range repoDigests {
+		repo, digest, ok := strings.Cut(item, "@")
+		if ok && strings.EqualFold(repo, name) {
+			return normalizeDigest(digest)
+		}
+	}
+	if len(repoDigests) == 1 {
+		_, digest, ok := strings.Cut(repoDigests[0], "@")
+		if ok {
+			return normalizeDigest(digest)
+		}
+	}
+	return ""
+}
+
+func normalizeDigest(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+	if !strings.HasPrefix(value, "sha256:") {
+		return value
+	}
+	return value
+}
+
+func sameDigest(a, b string) bool {
+	return normalizeDigest(a) != "" && normalizeDigest(a) == normalizeDigest(b)
+}
+
+func shortDigest(value string) string {
+	value = normalizeDigest(value)
+	if len(value) <= 19 {
+		return value
+	}
+	return value[:19]
 }
 
 func shellQuote(value string) string {

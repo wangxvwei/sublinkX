@@ -6,6 +6,8 @@ export interface UpdateInfo {
   hasUpdate: boolean;
   releaseUrl: string;
   dockerImage: string;
+  currentImageDigest: string;
+  latestImageDigest: string;
   updateCommand: string;
   autoUpdate: boolean;
   autoUpdateMessage: string;
