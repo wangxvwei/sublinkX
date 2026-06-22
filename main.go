@@ -81,6 +81,9 @@ func main() {
 	}
 
 	models.InitSqlite()
+	if err := models.LoadXUISourcesFromEnv(); err != nil {
+		log.Println("load x-ui sources from env failed:", err)
+	}
 	args := os.Args
 	if len(args) < 2 {
 		Run(port)
@@ -132,6 +135,7 @@ func Run(port int) {
 	routers.Mentus(r)
 	routers.Subcription(r)
 	routers.Nodes(r)
+	routers.XUISources(r)
 	routers.Clients(r)
 	routers.Total(r)
 	routers.Templates(r)

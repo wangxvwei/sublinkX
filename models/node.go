@@ -16,10 +16,14 @@ type GroupNode struct {
 
 type Node struct {
 	gorm.Model
-	ID         int
-	Name       string
-	Link       string
-	GroupNodes []GroupNode `gorm:"many2many:group_node_nodes"` // 反向关联字段
+	ID           int
+	Name         string
+	Link         string
+	LinkOverride string      `gorm:"type:text"`
+	Source       string      `gorm:"index"`
+	SourceKey    string      `gorm:"index"`
+	SubID        string      `gorm:"index"`
+	GroupNodes   []GroupNode `gorm:"many2many:group_node_nodes"` // 反向关联字段
 }
 
 // hook Node 写入创建删除修改 等写入权限
@@ -261,4 +265,11 @@ func GetNodeList() ([]Node, error) {
 		return nil, result.Error
 	}
 	return ns, result.Error
+}
+
+func (n Node) SubscriptionLink() string {
+	if n.LinkOverride != "" {
+		return n.LinkOverride
+	}
+	return n.Link
 }

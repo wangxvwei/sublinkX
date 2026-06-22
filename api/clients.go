@@ -193,7 +193,7 @@ func parseSubConfig(raw string) (node.SqlConfig, error) {
 func collectNodeLinks(nodes []models.Node) ([]string, error) {
 	links := make([]string, 0, len(nodes))
 	for _, item := range nodes {
-		nodeLinks, err := expandNodeLink(item.Link)
+		nodeLinks, err := expandNodeLink(item.SubscriptionLink())
 		if err != nil {
 			return nil, err
 		}
