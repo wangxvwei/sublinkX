@@ -232,8 +232,23 @@ func ApplyUpdate() gin.HandlerFunc {
 			return
 		}
 
-		helperImage := envOrDefault("UPDATE_HELPER_IMAGE", "docker:27-cli")
+		previousImage := container.Image
+		status := updateStatus{
+			Status:        "running",
+			Message:       "正在准备更新助手镜像。",
+			StartedAt:     time.Now().UTC().Format(time.RFC3339),
+			TargetImage:   image,
+			PreviousImage: previousImage,
+		}
+		_ = writeUpdateStatus(status)
+
+		helperImage := envOrDefault("UPDATE_HELPER_IMAGE", "ghcr.io/wangxvwei/sublinkx-update-helper:27-cli")
 		if err := docker.pullImage(helperImage); err != nil {
+			status.Status = "failed"
+			status.Message = "准备更新助手镜像失败，当前版本仍在运行。"
+			status.Error = err.Error()
+			status.FinishedAt = time.Now().UTC().Format(time.RFC3339)
+			_ = writeUpdateStatus(status)
 			c.JSON(http.StatusOK, gin.H{
 				"code": "A0500",
 				"msg":  fmt.Sprintf("准备更新助手镜像失败：%s", err.Error()),
@@ -241,14 +256,7 @@ func ApplyUpdate() gin.HandlerFunc {
 			return
 		}
 
-		previousImage := container.Image
-		status := updateStatus{
-			Status:        "running",
-			Message:       "更新任务已创建，正在准备拉取新镜像。",
-			StartedAt:     time.Now().UTC().Format(time.RFC3339),
-			TargetImage:   image,
-			PreviousImage: previousImage,
-		}
+		status.Message = "更新任务已创建，正在准备拉取新镜像。"
 		_ = writeUpdateStatus(status)
 
 		script := buildUpdateScript(

@@ -10,6 +10,7 @@ on:
 
 env:
   GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/sublinkx
+  GHCR_HELPER_IMAGE: ghcr.io/${{ github.repository_owner }}/sublinkx-update-helper
 
 jobs:
   build:
@@ -58,3 +59,19 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build and push update helper
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.update-helper
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.GHCR_HELPER_IMAGE }}:27-cli
+            ${{ env.GHCR_HELPER_IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.title=sublinkX update helper
+            org.opencontainers.image.description=Docker CLI helper image for sublinkX one-click updates
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}

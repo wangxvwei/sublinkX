@@ -1,0 +1,5 @@
+FROM docker:27-cli
+
+LABEL org.opencontainers.image.title="sublinkX update helper" \
+      org.opencontainers.image.description="Docker CLI helper image for sublinkX one-click updates" \
+      org.opencontainers.image.source="https://github.com/wangxvwei/sublinkX"
