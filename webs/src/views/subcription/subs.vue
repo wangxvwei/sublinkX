@@ -247,6 +247,15 @@ function handleSelectionChange(selection: Sub[]) {
   selectedRows.value = selection;
 }
 
+function getNodeCount(row: Sub | any) {
+  return row.Nodes?.length ?? 0;
+}
+
+function formatNodeCount(row: Sub | any) {
+  const count = getNodeCount(row);
+  return count ? `${count} 个节点` : "暂无节点";
+}
+
 function showLogs(row: Sub | any) {
   logs.value = row.SubLogs ?? [];
   logsDialogVisible.value = true;
@@ -322,6 +331,36 @@ function formatDate(row: Sub | any) {
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="48" />
+        <el-table-column type="expand" width="54">
+          <template #default="{ row }">
+            <div class="expanded-node-panel">
+              <div class="expanded-node-header">
+                <div>
+                  <strong>节点顺序</strong>
+                  <span>{{ formatNodeCount(row) }}</span>
+                </div>
+                <el-tag v-if="row.Nodes?.length" effect="plain" round>可排序</el-tag>
+              </div>
+
+              <VueDraggable
+                v-if="row.Nodes?.length"
+                v-model="row.Nodes"
+                :animation="160"
+                ghost-class="ghost"
+                handle=".drag-handle"
+                class="expanded-node-grid"
+                @end="persistSubscriptionOrder(row)"
+              >
+                <div v-for="(node, index) in row.Nodes" :key="node.ID || node.Name" class="expanded-node-item">
+                  <el-icon class="drag-handle"><Rank /></el-icon>
+                  <span class="row-number">{{ index + 1 }}</span>
+                  <span class="node-title">{{ node.Name }}</span>
+                </div>
+              </VueDraggable>
+              <el-empty v-else description="暂无节点" :image-size="72" />
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="Name" label="订阅名称" min-width="180">
           <template #default="{ row }">
             <el-tag effect="plain">{{ row.Name }}</el-tag>
@@ -329,27 +368,9 @@ function formatDate(row: Sub | any) {
         </el-table-column>
         <el-table-column label="节点数量" width="110">
           <template #default="{ row }">
-            {{ row.Nodes?.length ?? 0 }}
-          </template>
-        </el-table-column>
-        <el-table-column label="节点顺序" min-width="300">
-          <template #default="{ row }">
-            <VueDraggable
-              v-if="row.Nodes?.length"
-              v-model="row.Nodes"
-              :animation="160"
-              ghost-class="ghost"
-              handle=".drag-handle"
-              class="inline-node-order"
-              @end="persistSubscriptionOrder(row)"
-            >
-              <div v-for="(node, index) in row.Nodes" :key="node.ID || node.Name" class="inline-node-item">
-                <el-icon class="drag-handle"><Rank /></el-icon>
-                <span class="row-number compact">{{ index + 1 }}</span>
-                <span class="node-title">{{ node.Name }}</span>
-              </div>
-            </VueDraggable>
-            <span v-else class="empty-text">暂无节点</span>
+            <el-tag :type="getNodeCount(row) ? 'primary' : 'info'" effect="light" round>
+              {{ formatNodeCount(row) }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="客户端入口" min-width="180">
@@ -583,6 +604,71 @@ function formatDate(row: Sub | any) {
   color: #475569;
 }
 
+.content-card :deep(.el-table__expand-icon) {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.content-card :deep(.el-table__expanded-cell) {
+  padding: 0 !important;
+  background: #f8fafc;
+}
+
+.expanded-node-panel {
+  margin: 12px 18px 18px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.expanded-node-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.expanded-node-header strong {
+  display: block;
+  margin-bottom: 3px;
+  color: #111827;
+  font-size: 15px;
+}
+
+.expanded-node-header span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.expanded-node-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.expanded-node-item {
+  display: grid;
+  grid-template-columns: 20px 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 9px 12px;
+  cursor: grab;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
 .table-footer {
   display: flex;
   align-items: center;
@@ -621,7 +707,7 @@ function formatDate(row: Sub | any) {
 }
 
 .draggable-item:hover,
-.inline-node-item:hover {
+.expanded-node-item:hover {
   border-color: #bfdbfe;
   box-shadow: 0 8px 20px rgba(37, 99, 235, 0.1);
   transform: translateY(-1px);
@@ -665,27 +751,7 @@ function formatDate(row: Sub | any) {
   background: #dbeafe;
 }
 
-.inline-node-order {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.inline-node-item {
-  display: inline-flex;
-  align-items: center;
-  max-width: 260px;
-  gap: 8px;
-  padding: 7px 10px;
-  cursor: grab;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: rgba(248, 250, 252, 0.86);
-  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
-}
-
-.inline-node-item .drag-handle {
+.expanded-node-item .drag-handle {
   font-size: 15px;
 }
 
@@ -736,6 +802,14 @@ function formatDate(row: Sub | any) {
   .table-footer,
   .client-row {
     display: block;
+  }
+
+  .expanded-node-header {
+    display: block;
+  }
+
+  .expanded-node-grid {
+    grid-template-columns: 1fr;
   }
 
   .page-header .el-button,
