@@ -26,7 +26,7 @@ var embeddedFiles embed.FS
 //go:embed template
 var Template embed.FS
 
-var version = "2.2.0-latest"
+var version = "dev"
 
 func Templateinit() {
 	subFS, err := fs.Sub(Template, "template")

@@ -47,6 +47,17 @@ jobs:
             org.opencontainers.image.title=sublinkX
             org.opencontainers.image.description=sublinkX subscription manager with Clash Verge/Mihomo xhttp support
 
+      - name: Compute app version
+        id: app_version
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${GITHUB_REF_NAME}"
+          else
+            version="2.2.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -54,7 +65,7 @@ jobs:
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           build-args: |
-            APP_VERSION=${{ github.ref_type == 'tag' && github.ref_name || '2.2.0-latest' }}
+            APP_VERSION=${{ steps.app_version.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
