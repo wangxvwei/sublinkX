@@ -22,8 +22,13 @@
     </template>
 
     <!-- 用户头像 -->
+    <router-link class="update-shortcut" to="/system/user/set">
+      <el-icon><Refresh /></el-icon>
+      <span>更新</span>
+    </router-link>
+
     <el-dropdown class="setting-item" trigger="click">
-      <div class="flex-center h100% p10px">
+      <div class="user-trigger">
         <img
           :src="userStore.user.avatar + '?imageView2/1/w/80/h/80'"
           class="rounded-full mr-10px w24px w24px"
@@ -33,7 +38,7 @@
       <template #dropdown>
         <el-dropdown-menu>
             <router-link to="/system/user/set">
-            <el-dropdown-item>{{ $t("navbar.userset") }}</el-dropdown-item>
+            <el-dropdown-item>系统设置 / 版本更新</el-dropdown-item>
             </router-link>
           <el-dropdown-item divided @click="logout">
             {{ $t("navbar.logout") }}
@@ -59,6 +64,7 @@ import {
 } from "@/store";
 import defaultSettings from "@/settings";
 import { DeviceEnum } from "@/enums/DeviceEnum";
+import { Refresh } from "@element-plus/icons-vue";
 
 const appStore = useAppStore();
 const tagsViewStore = useTagsViewStore();
@@ -99,24 +105,63 @@ function logout() {
   min-width: 40px;
   height: $navbar-height;
   line-height: $navbar-height;
-  color: var(--el-text-color);
+  color: #111827;
   text-align: center;
   cursor: pointer;
 
   &:hover {
-    background: rgb(0 0 0 / 10%);
+    background: #eff6ff;
   }
 }
 
-.layout-top,
-.layout-mix {
-  .setting-item,
-  .el-icon {
-    color: var(--el-color-white);
-  }
+.setting-item :deep(.svg-icon),
+.setting-item :deep(.el-icon),
+.setting-item span {
+  color: #111827;
+}
+
+.user-trigger {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  color: #111827;
+  font-weight: 650;
+}
+
+.update-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  margin: 9px 6px 0 2px;
+  color: #1d4ed8;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 34px;
+  text-decoration: none;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.update-shortcut:hover {
+  color: #ffffff;
+  border-color: #2563eb;
+  background: #2563eb;
 }
 
 .dark .setting-item:hover {
   background: rgb(255 255 255 / 20%);
+}
+
+.dark .setting-item,
+.dark .setting-item :deep(.svg-icon),
+.dark .setting-item :deep(.el-icon),
+.dark .setting-item span,
+.dark .user-trigger {
+  color: #e5e7eb;
 }
 </style>

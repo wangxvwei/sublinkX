@@ -1,15 +1,25 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { Check, CopyDocument, Refresh, User } from "@element-plus/icons-vue";
 import { useUserStore } from "@/store";
 import { updateUserPassword } from "@/api/user";
-import { checkUpdate, type UpdateInfo } from "@/api/system/update";
+import {
+  applyUpdate,
+  checkUpdate,
+  getUpdateStatus,
+  type UpdateInfo,
+  type UpdateStatus,
+} from "@/api/system/update";
 
 const userStore = useUserStore();
 const userinfo = ref<any>();
 const saving = ref(false);
 const checking = ref(false);
+const updating = ref(false);
 const updateInfo = ref<UpdateInfo>();
+const updateStatus = ref<UpdateStatus>();
+let updateStatusTimer: number | undefined;
+let updateStatusFailures = 0;
 
 const form = reactive({
   username: "",
@@ -21,10 +31,30 @@ const updateStateType = computed(() => {
   return updateInfo.value.hasUpdate ? "warning" : "success";
 });
 
+const updateStatusVisible = computed(
+  () => updateStatus.value && updateStatus.value.status !== "idle"
+);
+
+const updateStatusClass = computed(() => `is-${updateStatus.value?.status || "idle"}`);
+
+const updateStatusMeta = computed(() => {
+  if (!updateStatus.value) return "";
+  const items = [
+    updateStatus.value.targetImage ? `目标镜像：${updateStatus.value.targetImage}` : "",
+    updateStatus.value.finishedAt ? `完成时间：${formatDate(updateStatus.value.finishedAt)}` : "",
+  ].filter(Boolean);
+  return items.join(" · ");
+});
+
 onMounted(async () => {
   userinfo.value = await userStore.getUserInfo();
   form.username = userinfo.value?.username ?? "";
   await loadUpdateInfo();
+  await loadUpdateStatus(false);
+});
+
+onUnmounted(() => {
+  stopUpdateStatusPolling();
 });
 
 async function resetPassword() {
@@ -56,13 +86,38 @@ async function resetPassword() {
   }
 }
 
-async function loadUpdateInfo() {
+async function loadUpdateInfo(showToast = false) {
   checking.value = true;
   try {
     const { data } = await checkUpdate();
     updateInfo.value = data;
+    if (showToast) {
+      if (!data?.latestVersion) {
+        ElMessage.warning(data?.message || "暂时无法获取最新版本");
+      } else if (data.hasUpdate) {
+        ElMessage.warning(`发现新版本：${data.latestVersion}`);
+      } else {
+        ElMessage.success(`当前已是最新版本：${data.currentVersion || data.latestVersion}`);
+      }
+    }
   } finally {
     checking.value = false;
+  }
+}
+
+async function loadUpdateStatus(showFinalMessage = true) {
+  try {
+    const { data } = await getUpdateStatus();
+    updateStatus.value = data;
+    if (data?.status === "running") {
+      beginUpdateStatusPolling();
+      return;
+    }
+    if (showFinalMessage) {
+      showTerminalUpdateMessage(data);
+    }
+  } catch (error) {
+    console.error(error);
   }
 }
 
@@ -81,6 +136,85 @@ async function copyCommand() {
   }
   ElMessage.success("更新命令已复制");
 }
+
+async function startOneClickUpdate() {
+  if (!updateInfo.value?.autoUpdate) {
+    ElMessage.warning(updateInfo.value?.autoUpdateMessage || "当前容器还没有启用一键更新");
+    return;
+  }
+
+  await ElMessageBox.confirm(
+    "确定开始一键更新吗？系统会拉取 latest 镜像并重建当前容器，页面会短暂无法访问。",
+    "一键更新",
+    {
+      confirmButtonText: "开始更新",
+      cancelButtonText: "取消",
+      type: "warning",
+    }
+  );
+
+  updating.value = true;
+  try {
+    const { data } = await applyUpdate();
+    updateStatus.value = {
+      status: "running",
+      message: data?.message || "更新已开始，容器会短暂重启。",
+      targetImage: data?.dockerImage,
+    };
+    ElMessage.success(data?.message || "更新已开始，请稍后刷新页面");
+    beginUpdateStatusPolling();
+  } finally {
+    updating.value = false;
+  }
+}
+
+function beginUpdateStatusPolling() {
+  stopUpdateStatusPolling();
+  updateStatusFailures = 0;
+  updateStatusTimer = window.setInterval(async () => {
+    try {
+      const { data } = await getUpdateStatus();
+      updateStatusFailures = 0;
+      updateStatus.value = data;
+      if (data?.status && data.status !== "running" && data.status !== "idle") {
+        stopUpdateStatusPolling();
+        showTerminalUpdateMessage(data);
+        await loadUpdateInfo(false);
+      }
+    } catch (error) {
+      updateStatusFailures += 1;
+      if (updateStatusFailures > 40) {
+        stopUpdateStatusPolling();
+        ElMessage.warning("更新状态暂时无法获取，请稍后刷新页面查看。");
+      }
+    }
+  }, 3000);
+}
+
+function stopUpdateStatusPolling() {
+  if (updateStatusTimer) {
+    window.clearInterval(updateStatusTimer);
+    updateStatusTimer = undefined;
+  }
+}
+
+function showTerminalUpdateMessage(status?: UpdateStatus) {
+  if (!status) return;
+  if (status.status === "success") {
+    ElMessage.success(status.message || "更新成功，请刷新页面");
+  } else if (status.status === "rolled_back") {
+    ElMessage.error(status.message || "更新失败，已回滚到上一版本");
+  } else if (status.status === "failed") {
+    ElMessage.error(status.message || "更新失败，请手动检查容器日志");
+  }
+}
+
+function formatDate(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
 </script>
 
 <template>
@@ -91,7 +225,7 @@ async function copyCommand() {
         <h1>账号与版本维护</h1>
         <p>这里可以修改管理员登录信息，也可以检查 Docker 镜像是否有新版本。</p>
       </div>
-      <el-button :icon="Refresh" @click="loadUpdateInfo" :loading="checking">检查更新</el-button>
+      <el-button :icon="Refresh" @click="loadUpdateInfo(true)" :loading="checking">检查更新</el-button>
     </section>
 
     <section class="settings-grid">
@@ -157,6 +291,31 @@ async function copyCommand() {
             <span>Docker 镜像</span>
             <strong>{{ updateInfo.dockerImage }}</strong>
           </div>
+          <div>
+            <span>当前容器</span>
+            <strong>{{ updateInfo.containerName || "sublinkx" }}</strong>
+          </div>
+          <div>
+            <span>网页一键更新</span>
+            <strong :class="updateInfo.autoUpdate ? 'status-ok' : 'status-warn'">
+              {{ updateInfo.autoUpdate ? "已启用" : "未启用" }}
+            </strong>
+          </div>
+        </div>
+
+        <el-alert
+          v-if="updateInfo?.autoUpdateMessage"
+          :title="updateInfo.autoUpdateMessage"
+          :type="updateInfo.autoUpdate ? 'success' : 'warning'"
+          show-icon
+          :closable="false"
+          class="update-tip"
+        />
+
+        <div v-if="updateStatusVisible" class="update-status-card" :class="updateStatusClass">
+          <strong>{{ updateStatus?.message }}</strong>
+          <span v-if="updateStatusMeta">{{ updateStatusMeta }}</span>
+          <small v-if="updateStatus?.error">{{ updateStatus.error }}</small>
         </div>
 
         <div class="command-box" v-if="updateInfo?.updateCommand">
@@ -165,7 +324,16 @@ async function copyCommand() {
         </div>
 
         <div class="update-actions">
-          <el-button :icon="Refresh" :loading="checking" @click="loadUpdateInfo">重新检查</el-button>
+          <el-button :icon="Refresh" :loading="checking" @click="loadUpdateInfo(true)">重新检查</el-button>
+          <el-button
+            type="success"
+            :icon="Refresh"
+            :loading="updating"
+            :disabled="!updateInfo?.autoUpdate"
+            @click="startOneClickUpdate"
+          >
+            一键更新
+          </el-button>
           <el-button
             v-if="updateInfo?.releaseUrl"
             type="primary"
@@ -286,6 +454,14 @@ async function copyCommand() {
   color: #111827;
 }
 
+.version-list .status-ok {
+  color: #047857;
+}
+
+.version-list .status-warn {
+  color: #b45309;
+}
+
 .settings-form {
   max-width: 420px;
 }
@@ -294,6 +470,48 @@ async function copyCommand() {
   display: grid;
   gap: 12px;
   margin: 16px 0;
+}
+
+.update-tip {
+  margin-bottom: 14px;
+}
+
+.update-status-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  color: #1e3a8a;
+  background: #eff6ff;
+}
+
+.update-status-card strong {
+  font-size: 14px;
+}
+
+.update-status-card span,
+.update-status-card small {
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.update-status-card small {
+  overflow-wrap: anywhere;
+}
+
+.update-status-card.is-success {
+  border-color: #bbf7d0;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.update-status-card.is-rolled_back,
+.update-status-card.is-failed {
+  border-color: #fecdd3;
+  color: #be123c;
+  background: #fff1f2;
 }
 
 .command-box {

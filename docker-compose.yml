@@ -8,10 +8,15 @@ services:
       - ./db:/app/db
       - ./template:/app/template
       - ./logs:/app/logs
+      # Enable web one-click updates. This gives the container Docker control permission.
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       TZ: Asia/Shanghai
       UPDATE_REPO: wangxvwei/sublinkX
       DOCKER_IMAGE: ghcr.io/wangxvwei/sublinkx
+      UPDATE_CONTAINER_NAME: sublinkx
+    # Required on many NAS systems because /var/run/docker.sock is owned by root/docker.
+    user: root
     restart: unless-stopped
     labels:
       com.centurylinklabs.watchtower.enable: "true"

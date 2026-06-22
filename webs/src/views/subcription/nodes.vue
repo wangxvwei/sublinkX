@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   Check,
   Close,
@@ -126,6 +126,7 @@ const sources = ref<XUISource[]>([]);
 const editingSourceId = ref<number | undefined>();
 const rewriteRuleRows = ref<XUIRewriteRuleRow[]>([]);
 const lastSyncResult = ref<SyncResult | null>(null);
+let syncResultTimer: number | undefined;
 
 const nodeForm = ref<NodeForm>({
   Name: "",
@@ -192,6 +193,10 @@ const nodeDialogTitle = computed(() =>
 
 onMounted(async () => {
   await loadAll();
+});
+
+onUnmounted(() => {
+  clearSyncResultTimer();
 });
 
 watch(
@@ -550,7 +555,7 @@ async function syncOneSource(row: XUISource) {
   if (!row.id) return;
   try {
     const { data } = await SyncXUISource(row.id);
-    lastSyncResult.value = data || null;
+    showSyncResult(data || null);
     ElMessage.success(`${row.name}：${formatSyncResult(data)}`);
     await loadAll();
   } catch (error) {
@@ -578,7 +583,7 @@ async function syncLocalXUI() {
   syncingLocalXUI.value = true;
   try {
     const { data } = await SyncXUINodes();
-    lastSyncResult.value = data || null;
+    showSyncResult(data || null);
     ElMessage.success(`本机 x-ui：${formatSyncResult(data)}`);
     await refreshNodeData();
   } catch (error) {
@@ -586,6 +591,24 @@ async function syncLocalXUI() {
     ElMessage.error("同步本机 x-ui 失败");
   } finally {
     syncingLocalXUI.value = false;
+  }
+}
+
+function showSyncResult(result: SyncResult | null) {
+  clearSyncResultTimer();
+  lastSyncResult.value = result;
+  if (result) {
+    syncResultTimer = window.setTimeout(() => {
+      lastSyncResult.value = null;
+      syncResultTimer = undefined;
+    }, 6000);
+  }
+}
+
+function clearSyncResultTimer() {
+  if (syncResultTimer) {
+    window.clearTimeout(syncResultTimer);
+    syncResultTimer = undefined;
   }
 }
 

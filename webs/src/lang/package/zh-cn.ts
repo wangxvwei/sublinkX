@@ -3,7 +3,7 @@ export default {
   route: {
     dashboard: "首页",
     document: "项目文档",
-    userset: "修改密码",
+    userset: "系统设置",
     system:"系统管理",
     nodelist:"节点列表",
     sublist:"订阅列表",
@@ -47,7 +47,7 @@ export default {
   navbar: {
     dashboard: "首页",
     logout: "注销登出",
-    userset: "修改密码",
+    userset: "系统设置 / 版本更新",
   },
   sizeSelect: {
     tooltip: "布局大小",

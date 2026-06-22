@@ -135,6 +135,20 @@ Thank you for your attention and support!
 
 Feel free to adjust any details as needed!
 
+## Web One-Click Update
+
+网页一键更新需要容器挂载 Docker socket，并让应用有权限访问该 socket：
+
+```yaml
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock
+environment:
+  UPDATE_CONTAINER_NAME: sublinkx
+user: root
+```
+
+启用后，后台“系统设置 / 版本更新”页面会出现“一键更新”按钮。这个功能会控制宿主机 Docker，只建议在可信内网环境使用，不建议把后台直接暴露到公网。
+
 ## Stargazers over time
 [![Stargazers over time](https://starchart.cc/gooaclok819/sublinkX.svg?variant=adaptive)](https://starchart.cc/gooaclok819/sublinkX)
 

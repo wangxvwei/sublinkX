@@ -3,7 +3,7 @@ export default {
   route: {
     dashboard: "Dashboard",
     document: "Document",
-    userset: "ChangePassword",
+    userset: "System Settings",
     system:"system management",
     nodelist:"Node List",
     sublist:"Subscription List",
@@ -47,7 +47,7 @@ export default {
   navbar: {
     dashboard: "Dashboard",
     logout: "Logout",
-    userset: "ChangePassword",
+    userset: "Settings / Updates",
   },
   sizeSelect: {
     tooltip: "Layout Size",
