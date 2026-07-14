@@ -5,9 +5,9 @@
 db
 logs
 work-preview
+work
 webs/node_modules
 webs/dist
-webs
 README.md
 README.en-US.md
 *.sh

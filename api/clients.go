@@ -201,9 +201,17 @@ func parseSubConfig(raw string) (node.SqlConfig, error) {
 func collectNodeLinks(nodes []models.Node) ([]string, error) {
 	links := make([]string, 0, len(nodes))
 	for _, item := range nodes {
-		nodeLinks, err := expandNodeLink(item.SubscriptionLink())
+		rawLink := item.SubscriptionLink()
+		nodeLinks, err := expandNodeLink(rawLink)
 		if err != nil {
 			return nil, err
+		}
+		if isRemoteSubscriptionLink(rawLink) {
+			links = append(links, nodeLinks...)
+			continue
+		}
+		for i := range nodeLinks {
+			nodeLinks[i] = rewriteNodeDisplayName(nodeLinks[i], item.Name)
 		}
 		links = append(links, nodeLinks...)
 	}
@@ -215,7 +223,7 @@ func expandNodeLink(raw string) ([]string, error) {
 	if raw == "" {
 		return nil, nil
 	}
-	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
+	if isRemoteSubscriptionLink(raw) {
 		body, err := fetchRemoteSubscription(raw)
 		if err != nil {
 			return nil, err
@@ -223,6 +231,35 @@ func expandNodeLink(raw string) ([]string, error) {
 		return splitLinks(node.Base64Decode(body)), nil
 	}
 	return splitLinks(raw), nil
+}
+
+func isRemoteSubscriptionLink(raw string) bool {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	return strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://")
+}
+
+func rewriteNodeDisplayName(raw, name string) string {
+	raw = strings.TrimSpace(raw)
+	name = strings.TrimSpace(name)
+	if raw == "" || name == "" {
+		return raw
+	}
+
+	scheme := strings.ToLower(strings.SplitN(raw, "://", 2)[0])
+	if scheme == "vmess" {
+		vmess, err := node.DecodeVMESSURL(raw)
+		if err == nil {
+			vmess.Ps = name
+			return node.EncodeVmessURL(vmess)
+		}
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" {
+		return raw
+	}
+	parsed.Fragment = name
+	return parsed.String()
 }
 
 func fetchRemoteSubscription(link string) (string, error) {

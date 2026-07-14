@@ -53,6 +53,8 @@ jobs:
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             version="${GITHUB_REF_NAME}"
+          elif [ -f VERSION ]; then
+            version="$(tr -d '[:space:]' < VERSION)"
           else
             version="2.2.${GITHUB_RUN_NUMBER}"
           fi

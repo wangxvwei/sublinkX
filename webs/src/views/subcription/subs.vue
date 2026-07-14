@@ -31,6 +31,9 @@ interface Node {
   ID: number;
   Name: string;
   Link: string;
+  Source?: string;
+  SourceKey?: string;
+  SubID?: string;
 }
 
 interface Config {
@@ -93,6 +96,21 @@ const clientOptions: ClientOption[] = [
 const pagedSubscriptions = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return subscriptions.value.slice(start, start + pageSize.value);
+});
+
+const sourceGroups = computed(() => {
+  const groups = new Map<string, Node[]>();
+  for (const item of nodes.value) {
+    const key = getNodeSource(item);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)?.push(item);
+  }
+  return Array.from(groups.entries())
+    .map(([name, items]) => ({
+      name,
+      nodes: items.sort((a, b) => a.Name.localeCompare(b.Name)),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 });
 
 onMounted(async () => {
@@ -306,6 +324,45 @@ function resetSubscriptionToken() {
 
 function isValidSubscriptionToken(token: string) {
   return /^[a-z0-9_-]{6,64}$/.test(token);
+}
+
+function getNodeSource(item: Node) {
+  const source = String(item.Source || "").trim();
+  if (!source) return "手动节点";
+  const remoteMatch = source.match(/^3x-ui-source:(\d+)$/);
+  if (remoteMatch) return `VPS 来源 ${remoteMatch[1]}`;
+  return source;
+}
+
+function sourceSelectedCount(sourceName: string) {
+  const selected = new Set(selectedNodeNames.value);
+  const group = sourceGroups.value.find((item) => item.name === sourceName);
+  return group?.nodes.filter((item) => selected.has(item.Name)).length ?? 0;
+}
+
+function sourceAllSelected(sourceName: string) {
+  const group = sourceGroups.value.find((item) => item.name === sourceName);
+  return !!group?.nodes.length && sourceSelectedCount(sourceName) === group.nodes.length;
+}
+
+function addSourceNodes(sourceName: string) {
+  const group = sourceGroups.value.find((item) => item.name === sourceName);
+  if (!group) return;
+  const selected = new Set(selectedNodeNames.value);
+  const next = [...selectedNodeNames.value];
+  for (const item of group.nodes) {
+    if (selected.has(item.Name)) continue;
+    selected.add(item.Name);
+    next.push(item.Name);
+  }
+  selectedNodeNames.value = next;
+}
+
+function removeSourceNodes(sourceName: string) {
+  const group = sourceGroups.value.find((item) => item.name === sourceName);
+  if (!group) return;
+  const removeNames = new Set(group.nodes.map((item) => item.Name));
+  selectedNodeNames.value = selectedNodeNames.value.filter((name) => !removeNames.has(name));
 }
 
 function showQr(title: string, url: string) {
@@ -525,6 +582,36 @@ function formatDate(row: Sub | any) {
             <el-checkbox label="udp">启用 UDP</el-checkbox>
             <el-checkbox label="cert">跳过证书校验</el-checkbox>
           </el-checkbox-group>
+        </el-form-item>
+
+        <el-form-item v-if="sourceGroups.length" label="按 VPS 来源批量添加">
+          <div class="source-picker">
+            <div v-for="source in sourceGroups" :key="source.name" class="source-picker-card">
+              <div class="source-picker-main">
+                <strong>{{ source.name }}</strong>
+                <span>{{ sourceSelectedCount(source.name) }} / {{ source.nodes.length }} 个节点已选</span>
+              </div>
+              <div class="source-picker-actions">
+                <el-button
+                  size="small"
+                  type="primary"
+                  plain
+                  :disabled="sourceAllSelected(source.name)"
+                  @click="addSourceNodes(source.name)"
+                >
+                  添加全部
+                </el-button>
+                <el-button
+                  size="small"
+                  plain
+                  :disabled="sourceSelectedCount(source.name) === 0"
+                  @click="removeSourceNodes(source.name)"
+                >
+                  移除
+                </el-button>
+              </div>
+            </div>
+          </div>
         </el-form-item>
 
         <el-form-item label="选择节点">
@@ -761,6 +848,49 @@ function formatDate(row: Sub | any) {
   width: 100%;
 }
 
+.source-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.source-picker-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+.source-picker-main {
+  min-width: 0;
+}
+
+.source-picker-main strong {
+  display: block;
+  overflow: hidden;
+  color: #111827;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-picker-main span {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.source-picker-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .node-order {
   width: 100%;
 }
@@ -880,6 +1010,7 @@ function formatDate(row: Sub | any) {
   .page-header,
   .table-footer,
   .client-row,
+  .source-picker-card,
   .token-editor {
     display: block;
   }
@@ -895,6 +1026,7 @@ function formatDate(row: Sub | any) {
   .page-header .el-button,
   .batch-actions,
   .client-actions,
+  .source-picker-actions,
   .token-editor .el-button {
     margin-top: 12px;
   }

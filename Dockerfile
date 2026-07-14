@@ -1,3 +1,13 @@
+FROM node:20-alpine AS webbuilder
+
+WORKDIR /web
+ENV HUSKY=0
+RUN corepack enable && corepack prepare pnpm@11.5.2 --activate
+COPY webs/package.json webs/pnpm-workspace.yaml webs/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY webs/ ./
+RUN pnpm build
+
 FROM golang:1.22.2-alpine AS builder
 
 WORKDIR /src
@@ -6,6 +16,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+COPY --from=webbuilder /web/dist /web-dist
+RUN rm -rf static \
+    && mkdir -p static \
+    && cp -a /web-dist/. static/
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${APP_VERSION}" -o /out/sublinkX .
 
 FROM alpine:3.20
