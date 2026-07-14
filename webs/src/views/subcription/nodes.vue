@@ -112,6 +112,7 @@ const nodeDialogVisible = ref(false);
 const nodeDialogMode = ref<"add" | "edit">("add");
 const nodeSaving = ref(false);
 const sourceSaving = ref(false);
+const sourceSyncing = ref(false);
 const nodeLoading = ref(false);
 const sourceLoading = ref(false);
 const syncingAllSources = ref(false);
@@ -552,16 +553,28 @@ async function removeSource(row: XUISource) {
 }
 
 async function syncOneSource(row: XUISource) {
-  if (!row.id) return;
+  const errorText = validateSource();
+  if (errorText) {
+    ElMessage.warning(errorText);
+    return;
+  }
+
+  sourceSyncing.value = true;
   try {
-    const { data } = await SyncXUISource(row.id);
+    const { data: savedSource } = await SaveXUISource(normalizeSourcePayload());
+    const sourceId = savedSource?.id || row.id || editingSourceId.value;
+    if (!sourceId) throw new Error("保存来源后未返回来源 ID");
+
+    const { data } = await SyncXUISource(sourceId);
     showSyncResult(data || null);
     ElMessage.success(`${row.name}：${formatSyncResult(data)}`);
     await loadAll();
   } catch (error) {
     console.error(error);
-    ElMessage.error(`${row.name} 同步失败`);
+    ElMessage.error(`${row.name} 保存或同步失败`);
     await loadSources();
+  } finally {
+    sourceSyncing.value = false;
   }
 }
 
@@ -1088,9 +1101,10 @@ function formatSyncResult(result?: SyncResult) {
                   v-if="editingSourceId"
                   type="success"
                   :icon="Refresh"
+                  :loading="sourceSyncing"
                   @click="syncOneSource(sourceForm)"
                 >
-                  同步当前
+                  保存并同步
                 </el-button>
                 <el-button
                   v-if="editingSourceId"
