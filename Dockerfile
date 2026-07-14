@@ -1,4 +1,4 @@
-FROM node:20-alpine AS webbuilder
+FROM node:24-alpine AS webbuilder
 
 WORKDIR /web
 ENV HUSKY=0
