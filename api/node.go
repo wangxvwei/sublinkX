@@ -14,6 +14,72 @@ import (
 	"gorm.io/gorm"
 )
 
+type nodeView struct {
+	models.Node
+	SourceName string `json:"SourceName,omitempty"`
+}
+
+func buildNodeViews(ns []models.Node) []nodeView {
+	sourceNames := loadXUISourceNames(ns)
+	views := make([]nodeView, 0, len(ns))
+	for _, item := range ns {
+		views = append(views, nodeView{
+			Node:       item,
+			SourceName: displayNodeSourceName(item.Source, sourceNames),
+		})
+	}
+	return views
+}
+
+func loadXUISourceNames(ns []models.Node) map[string]string {
+	ids := make([]int, 0)
+	seen := map[int]bool{}
+	for _, item := range ns {
+		rawID, ok := strings.CutPrefix(strings.TrimSpace(item.Source), "3x-ui-source:")
+		if !ok {
+			continue
+		}
+		id, err := strconv.Atoi(rawID)
+		if err != nil || id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return map[string]string{}
+	}
+
+	var sources []models.XUISource
+	if err := models.DB.Select("id", "name").Where("id in ?", ids).Find(&sources).Error; err != nil {
+		log.Println("load x-ui source names failed:", err)
+		return map[string]string{}
+	}
+	result := make(map[string]string, len(sources))
+	for _, source := range sources {
+		name := strings.TrimSpace(source.Name)
+		if name == "" {
+			continue
+		}
+		result[fmt.Sprintf("3x-ui-source:%d", source.ID)] = name
+	}
+	return result
+}
+
+func displayNodeSourceName(source string, sourceNames map[string]string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return "\u624b\u52a8\u8282\u70b9"
+	}
+	if name := strings.TrimSpace(sourceNames[source]); name != "" {
+		return name
+	}
+	if rawID, ok := strings.CutPrefix(source, "3x-ui-source:"); ok {
+		return "VPS \u6765\u6e90 " + rawID
+	}
+	return source
+}
+
 func DocodeNodeName(nd *models.Node) (models.Node, error) { // 解码节点名称
 	if nd.Name == "" {
 		u, err := url.Parse(nd.Link)
@@ -154,7 +220,7 @@ func NodeGet(c *gin.Context) {
 	}
 	c.JSON(200, gin.H{
 		"code": "00000",
-		"data": ns,
+		"data": buildNodeViews(ns),
 		"msg":  "node get",
 	})
 }

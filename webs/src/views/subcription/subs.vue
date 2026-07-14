@@ -32,6 +32,7 @@ interface Node {
   Name: string;
   Link: string;
   Source?: string;
+  SourceName?: string;
   SourceKey?: string;
   SubID?: string;
 }
@@ -99,20 +100,20 @@ const pagedSubscriptions = computed(() => {
 });
 
 const sourceGroups = computed(() => {
-  const groups = new Map<string, Node[]>();
+  const groups = new Map<string, { name: string; nodes: Node[] }>();
   for (const item of nodes.value) {
-    const key = getNodeSource(item);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)?.push(item);
+    const key = getNodeSourceKey(item);
+    if (!groups.has(key)) groups.set(key, { name: getNodeSourceName(item), nodes: [] });
+    groups.get(key)?.nodes.push(item);
   }
   return Array.from(groups.entries())
-    .map(([name, items]) => ({
-      name,
-      nodes: items.sort((a, b) => a.Name.localeCompare(b.Name)),
+    .map(([key, item]) => ({
+      key,
+      name: item.name,
+      nodes: item.nodes.sort((a, b) => a.Name.localeCompare(b.Name)),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 });
-
 onMounted(async () => {
   await Promise.all([loadSubscriptions(), loadNodes(), loadTemplates()]);
 });
@@ -326,27 +327,34 @@ function isValidSubscriptionToken(token: string) {
   return /^[a-z0-9_-]{6,64}$/.test(token);
 }
 
-function getNodeSource(item: Node) {
+function getNodeSourceKey(item: Node) {
   const source = String(item.Source || "").trim();
-  if (!source) return "手动节点";
+  return source || "manual";
+}
+
+function getNodeSourceName(item: Node) {
+  const sourceName = String(item.SourceName || "").trim();
+  if (sourceName) return sourceName;
+  const source = String(item.Source || "").trim();
+  if (!source) return "\u624b\u52a8\u8282\u70b9";
   const remoteMatch = source.match(/^3x-ui-source:(\d+)$/);
-  if (remoteMatch) return `VPS 来源 ${remoteMatch[1]}`;
+  if (remoteMatch) return `VPS \u6765\u6e90 ${remoteMatch[1]}`;
   return source;
 }
 
-function sourceSelectedCount(sourceName: string) {
+function sourceSelectedCount(sourceKey: string) {
   const selected = new Set(selectedNodeNames.value);
-  const group = sourceGroups.value.find((item) => item.name === sourceName);
+  const group = sourceGroups.value.find((item) => item.key === sourceKey);
   return group?.nodes.filter((item) => selected.has(item.Name)).length ?? 0;
 }
 
-function sourceAllSelected(sourceName: string) {
-  const group = sourceGroups.value.find((item) => item.name === sourceName);
-  return !!group?.nodes.length && sourceSelectedCount(sourceName) === group.nodes.length;
+function sourceAllSelected(sourceKey: string) {
+  const group = sourceGroups.value.find((item) => item.key === sourceKey);
+  return !!group?.nodes.length && sourceSelectedCount(sourceKey) === group.nodes.length;
 }
 
-function addSourceNodes(sourceName: string) {
-  const group = sourceGroups.value.find((item) => item.name === sourceName);
+function addSourceNodes(sourceKey: string) {
+  const group = sourceGroups.value.find((item) => item.key === sourceKey);
   if (!group) return;
   const selected = new Set(selectedNodeNames.value);
   const next = [...selectedNodeNames.value];
@@ -358,8 +366,8 @@ function addSourceNodes(sourceName: string) {
   selectedNodeNames.value = next;
 }
 
-function removeSourceNodes(sourceName: string) {
-  const group = sourceGroups.value.find((item) => item.name === sourceName);
+function removeSourceNodes(sourceKey: string) {
+  const group = sourceGroups.value.find((item) => item.key === sourceKey);
   if (!group) return;
   const removeNames = new Set(group.nodes.map((item) => item.Name));
   selectedNodeNames.value = selectedNodeNames.value.filter((name) => !removeNames.has(name));
@@ -586,26 +594,26 @@ function formatDate(row: Sub | any) {
 
         <el-form-item v-if="sourceGroups.length" label="按 VPS 来源批量添加">
           <div class="source-picker">
-            <div v-for="source in sourceGroups" :key="source.name" class="source-picker-card">
+            <div v-for="source in sourceGroups" :key="source.key" class="source-picker-card">
               <div class="source-picker-main">
                 <strong>{{ source.name }}</strong>
-                <span>{{ sourceSelectedCount(source.name) }} / {{ source.nodes.length }} 个节点已选</span>
+                <span>{{ sourceSelectedCount(source.key) }} / {{ source.nodes.length }} 个节点已选</span>
               </div>
               <div class="source-picker-actions">
                 <el-button
                   size="small"
                   type="primary"
                   plain
-                  :disabled="sourceAllSelected(source.name)"
-                  @click="addSourceNodes(source.name)"
+                  :disabled="sourceAllSelected(source.key)"
+                  @click="addSourceNodes(source.key)"
                 >
                   添加全部
                 </el-button>
                 <el-button
                   size="small"
                   plain
-                  :disabled="sourceSelectedCount(source.name) === 0"
-                  @click="removeSourceNodes(source.name)"
+                  :disabled="sourceSelectedCount(source.key) === 0"
+                  @click="removeSourceNodes(source.key)"
                 >
                   移除
                 </el-button>
