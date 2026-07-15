@@ -31,6 +31,7 @@ interface SubItem {
   Name: string;
   Nodes?: NodeItem[];
   NodeOrder?: string;
+  NodeOrderIDs?: string;
   CreatedAt?: string;
 }
 
@@ -153,6 +154,13 @@ function formatGroups(row: NodeItem) {
   return names.length ? names.join(" / ") : "未分组";
 }
 
+function getSubscriptionNodeCount(row: SubItem) {
+  if (row.Nodes?.length) return row.Nodes.length;
+  if (row.NodeOrderIDs) return row.NodeOrderIDs.split(",").filter(Boolean).length;
+  if (row.NodeOrder) return row.NodeOrder.split(",").filter(Boolean).length;
+  return 0;
+}
+
 function goNodes() {
   router.push("/subcription/nodes");
 }
@@ -256,7 +264,7 @@ function goNodes() {
         <div v-if="recentSubs.length" class="subscription-list">
           <div v-for="item in recentSubs" :key="item.ID" class="subscription-row">
             <strong>{{ item.Name }}</strong>
-            <span>{{ item.NodeOrder ? item.NodeOrder.split(',').filter(Boolean).length : item.Nodes?.length ?? 0 }} 个节点</span>
+            <span>{{ getSubscriptionNodeCount(item) }} 个节点</span>
           </div>
         </div>
         <el-empty v-else description="还没有订阅" :image-size="80" />

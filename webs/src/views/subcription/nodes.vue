@@ -520,13 +520,22 @@ async function saveSource() {
 
   sourceSaving.value = true;
   try {
-    await SaveXUISource(normalizeSourcePayload());
-    ElMessage.success(editingSourceId.value ? "来源已更新" : "来源已创建");
-    beginCreateSource();
+    const wasEditing = !!editingSourceId.value;
+    const { data } = await SaveXUISource(normalizeSourcePayload());
+    if (data?.id) {
+      editingSourceId.value = data.id;
+      sourceForm.value = {
+        ...sourceForm.value,
+        ...data,
+        password: "",
+        apiToken: "",
+      };
+    }
+    ElMessage.success(wasEditing ? "来源已更新" : "来源已创建");
     await loadSources();
   } catch (error) {
     console.error(error);
-    ElMessage.error("保存来源失败");
+    ElMessage.error(error instanceof Error ? error.message : "保存来源失败");
   } finally {
     sourceSaving.value = false;
   }
@@ -564,14 +573,15 @@ async function syncOneSource(row: XUISource) {
     const { data: savedSource } = await SaveXUISource(normalizeSourcePayload());
     const sourceId = savedSource?.id || row.id || editingSourceId.value;
     if (!sourceId) throw new Error("保存来源后未返回来源 ID");
+    editingSourceId.value = sourceId;
 
     const { data } = await SyncXUISource(sourceId);
     showSyncResult(data || null);
-    ElMessage.success(`${row.name}：${formatSyncResult(data)}`);
+    ElMessage.success(`${savedSource?.name || row.name || sourceForm.value.name}：${formatSyncResult(data)}`);
     await loadAll();
   } catch (error) {
     console.error(error);
-    ElMessage.error(`${row.name} 保存或同步失败`);
+    ElMessage.error(error instanceof Error ? error.message : `${row.name} 保存或同步失败`);
     await loadSources();
   } finally {
     sourceSyncing.value = false;
@@ -581,12 +591,17 @@ async function syncOneSource(row: XUISource) {
 async function syncAllSources() {
   syncingAllSources.value = true;
   try {
-    await SyncAllXUISources();
-    ElMessage.success("已同步全部启用来源");
+    const { data } = await SyncAllXUISources();
+    const failed = Array.isArray(data) ? data.filter((item) => item?.error).length : 0;
+    if (failed > 0) {
+      ElMessage.warning(`同步完成，${failed} 个来源失败`);
+    } else {
+      ElMessage.success("已同步全部启用来源");
+    }
     await loadAll();
   } catch (error) {
     console.error(error);
-    ElMessage.error("同步全部来源失败");
+    ElMessage.error(error instanceof Error ? error.message : "同步全部来源失败");
   } finally {
     syncingAllSources.value = false;
   }
@@ -1093,19 +1108,18 @@ function formatSyncResult(result?: SyncResult) {
               </el-collapse>
 
               <div class="source-actions">
-                <el-button type="primary" :icon="Check" :loading="sourceSaving" @click="saveSource">
-                  保存来源
-                </el-button>
-                <el-button :icon="Close" @click="beginCreateSource">重置</el-button>
                 <el-button
-                  v-if="editingSourceId"
-                  type="success"
+                  type="primary"
                   :icon="Refresh"
                   :loading="sourceSyncing"
                   @click="syncOneSource(sourceForm)"
                 >
                   保存并同步
                 </el-button>
+                <el-button :icon="Check" :loading="sourceSaving" @click="saveSource">
+                  仅保存配置
+                </el-button>
+                <el-button :icon="Close" @click="beginCreateSource">重置</el-button>
                 <el-button
                   v-if="editingSourceId"
                   type="danger"

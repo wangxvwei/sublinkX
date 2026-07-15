@@ -99,7 +99,6 @@ func main() {
 	switch args[1] {
 	case "setting":
 		settingCmd.Parse(args[2:])
-		fmt.Println(username, password)
 		settings.ResetUser(username, password)
 	case "run":
 		settingCmd.Parse(args[2:])

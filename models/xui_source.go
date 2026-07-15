@@ -703,6 +703,7 @@ func (s XUISource) fetchAPIInbounds(panelBaseURL string) ([]xuiAPIInbound, error
 	}
 	req.Header.Set("Authorization", "Bearer "+s.APIToken)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	client := http.Client{
 		Timeout: 15 * time.Second,
 		Transport: &http.Transport{
@@ -748,6 +749,7 @@ func (s XUISource) detectAPISubscriptionSettings(panelBaseURL string) (string, s
 		return "", "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+s.APIToken)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	client := http.Client{
 		Timeout: 15 * time.Second,
 		Transport: &http.Transport{

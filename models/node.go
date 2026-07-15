@@ -165,17 +165,9 @@ func (n *Node) Del() error {
 // 更新节点
 
 func (n *Node) UpdateNode(New *Node) error {
-	// 检查节点是否已存在
-	var n1 Node
-	result := DB.Model(n).Where("id = ?", New.ID).First(&n1) // 查询数据库中是否存在同名同链接的节点
-	if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		log.Println(result.Error)
-		return result.Error // 如果查询出错，返回错误
-
-	}
-	if result.RowsAffected > 0 {
-		log.Println("节点已经存在", result.Error)
-		return errors.New("节点已经存在") // 如果查询出错，返回错误
+	var existing Node
+	if err := DB.First(&existing, n.ID).Error; err != nil {
+		return err
 	}
 	// 更新记录
 	return DB.Model(n).Where("id = ?", n.ID).Updates(New).Error

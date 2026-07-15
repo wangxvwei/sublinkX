@@ -38,7 +38,7 @@ service.interceptors.response.use(
     return Promise.reject(new Error(msg || "Error"));
   },
   (error: any) => {
-    if (error.response.data) {
+    if (error.response?.data) {
       const { code, msg } = error.response.data;
       // token 过期,重新登录
       if (code === "A0230") {
@@ -56,7 +56,8 @@ service.interceptors.response.use(
         ElMessage.error(msg || "系统出错");
       }
     }
-    return Promise.reject(error.message);
+    const message = error.response?.data?.msg || error.message || "系统出错";
+    return Promise.reject(new Error(message));
   }
 );
 

@@ -66,7 +66,7 @@ const subscriptions = ref<Sub[]>([]);
 const nodes = ref<Node[]>([]);
 const templates = ref<TemplateFile[]>([]);
 const selectedRows = ref<Sub[]>([]);
-const selectedNodeNames = ref<string[]>([]);
+const selectedNodeIds = ref<number[]>([]);
 const logs = ref<SubLog[]>([]);
 const subscriptionDialogVisible = ref(false);
 const clientDialogVisible = ref(false);
@@ -138,7 +138,7 @@ function openAddDialog() {
   subName.value = "";
   subToken.value = generateSubscriptionToken();
   oldSubName.value = "";
-  selectedNodeNames.value = [];
+  selectedNodeIds.value = [];
   enabledOptions.value = ["udp"];
   clashTemplate.value = "./template/clash.yaml";
   surgeTemplate.value = "./template/surge.conf";
@@ -153,7 +153,7 @@ function openEditDialog(row: Sub | any) {
   subName.value = row.Name;
   subToken.value = getSubscriptionToken(row);
   oldSubName.value = row.Name;
-  selectedNodeNames.value = row.Nodes?.map((item: Node) => item.Name) ?? [];
+  selectedNodeIds.value = row.Nodes?.map((item: Node) => item.ID).filter(Boolean) ?? [];
   enabledOptions.value = [];
   if (config.udp) enabledOptions.value.push("udp");
   if (config.cert) enabledOptions.value.push("cert");
@@ -166,6 +166,7 @@ function openEditDialog(row: Sub | any) {
 
 async function persistSubscriptionOrder(row: Sub | any) {
   const nodeNames = row.Nodes?.map((item: Node) => item.Name).filter(Boolean) ?? [];
+  const nodeIds = row.Nodes?.map((item: Node) => item.ID).filter(Boolean) ?? [];
   if (!row.Name || !nodeNames.length) return;
 
   try {
@@ -175,6 +176,7 @@ async function persistSubscriptionOrder(row: Sub | any) {
       oldname: row.Name,
       token: getSubscriptionToken(row),
       nodes: nodeNames.join(","),
+      nodeIds: nodeIds.join(","),
     });
     ElMessage.success("节点顺序已保存");
     await loadSubscriptions();
@@ -190,7 +192,7 @@ async function submitSubscription() {
     ElMessage.warning("订阅名称不能为空");
     return;
   }
-  if (!selectedNodeNames.value.length) {
+  if (!selectedNodeIds.value.length) {
     ElMessage.warning("请至少选择一个节点");
     return;
   }
@@ -213,7 +215,8 @@ async function submitSubscription() {
         config: JSON.stringify(config),
         name: subName.value.trim(),
         token,
-        nodes: selectedNodeNames.value.join(","),
+        nodes: getSelectedNodeNames().join(","),
+        nodeIds: selectedNodeIds.value.join(","),
       });
       ElMessage.success("订阅已添加");
     } else {
@@ -222,7 +225,8 @@ async function submitSubscription() {
         name: subName.value.trim(),
         oldname: oldSubName.value,
         token,
-        nodes: selectedNodeNames.value.join(","),
+        nodes: getSelectedNodeNames().join(","),
+        nodeIds: selectedNodeIds.value.join(","),
       });
       ElMessage.success("订阅已更新");
     }
@@ -305,6 +309,11 @@ function getSubscriptionToken(row: Sub | any) {
   return String(row.Token || row.token || md5(row.Name)).trim().toLowerCase();
 }
 
+function getSelectedNodeNames() {
+  const byID = new Map(nodes.value.map((item) => [item.ID, item.Name]));
+  return selectedNodeIds.value.map((id) => byID.get(id)).filter(Boolean) as string[];
+}
+
 function generateSubscriptionToken() {
   const bytes = new Uint8Array(8);
   if (window.crypto?.getRandomValues) {
@@ -343,9 +352,9 @@ function getNodeSourceName(item: Node) {
 }
 
 function sourceSelectedCount(sourceKey: string) {
-  const selected = new Set(selectedNodeNames.value);
+  const selected = new Set(selectedNodeIds.value);
   const group = sourceGroups.value.find((item) => item.key === sourceKey);
-  return group?.nodes.filter((item) => selected.has(item.Name)).length ?? 0;
+  return group?.nodes.filter((item) => selected.has(item.ID)).length ?? 0;
 }
 
 function sourceAllSelected(sourceKey: string) {
@@ -356,21 +365,25 @@ function sourceAllSelected(sourceKey: string) {
 function addSourceNodes(sourceKey: string) {
   const group = sourceGroups.value.find((item) => item.key === sourceKey);
   if (!group) return;
-  const selected = new Set(selectedNodeNames.value);
-  const next = [...selectedNodeNames.value];
+  const selected = new Set(selectedNodeIds.value);
+  const next = [...selectedNodeIds.value];
   for (const item of group.nodes) {
-    if (selected.has(item.Name)) continue;
-    selected.add(item.Name);
-    next.push(item.Name);
+    if (selected.has(item.ID)) continue;
+    selected.add(item.ID);
+    next.push(item.ID);
   }
-  selectedNodeNames.value = next;
+  selectedNodeIds.value = next;
 }
 
 function removeSourceNodes(sourceKey: string) {
   const group = sourceGroups.value.find((item) => item.key === sourceKey);
   if (!group) return;
-  const removeNames = new Set(group.nodes.map((item) => item.Name));
-  selectedNodeNames.value = selectedNodeNames.value.filter((name) => !removeNames.has(name));
+  const removeIds = new Set(group.nodes.map((item) => item.ID));
+  selectedNodeIds.value = selectedNodeIds.value.filter((id) => !removeIds.has(id));
+}
+
+function getNodeNameById(id: number) {
+  return nodes.value.find((item) => item.ID === id)?.Name || `节点 ${id}`;
 }
 
 function showQr(title: string, url: string) {
@@ -624,7 +637,7 @@ function formatDate(row: Sub | any) {
 
         <el-form-item label="选择节点">
           <el-select
-            v-model="selectedNodeNames"
+            v-model="selectedNodeIds"
             multiple
             filterable
             collapse-tags
@@ -632,23 +645,23 @@ function formatDate(row: Sub | any) {
             class="full-width"
             placeholder="选择要包含的节点"
           >
-            <el-option v-for="item in nodes" :key="item.Name" :label="item.Name" :value="item.Name" />
+            <el-option v-for="item in nodes" :key="item.ID" :label="item.Name" :value="item.ID" />
           </el-select>
         </el-form-item>
 
-        <el-form-item v-if="selectedNodeNames.length" label="节点排序">
+        <el-form-item v-if="selectedNodeIds.length" label="节点排序">
           <div class="sort-helper">拖动左侧手柄调整顺序，保存后会写入订阅的节点输出顺序。</div>
           <VueDraggable
-            v-model="selectedNodeNames"
+            v-model="selectedNodeIds"
             :animation="160"
             ghost-class="ghost"
             handle=".drag-handle"
             class="node-order"
           >
-            <div v-for="(nodeName, index) in selectedNodeNames" :key="nodeName" class="draggable-item">
+            <div v-for="(nodeId, index) in selectedNodeIds" :key="nodeId" class="draggable-item">
               <el-icon class="drag-handle"><Rank /></el-icon>
               <span class="row-number">{{ index + 1 }}</span>
-              <span class="node-title">{{ nodeName }}</span>
+              <span class="node-title">{{ getNodeNameById(nodeId) }}</span>
             </div>
           </VueDraggable>
         </el-form-item>

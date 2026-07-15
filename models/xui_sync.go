@@ -440,9 +440,6 @@ func upsertXUINode(name, link, linkOverride, source, sourceKey, subID, groupName
 	var existing Node
 	err := DB.Unscoped().Where("source = ? and source_key = ?", source, sourceKey).First(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = DB.Where("link = ?", link).First(&existing).Error
-	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
 		err = DB.Unscoped().
 			Where("source_key = ? and (source like ? or source like ?)", sourceKey, "3x-ui:%", "3x-ui-source:%").
 			First(&existing).Error

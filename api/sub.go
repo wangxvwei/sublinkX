@@ -57,8 +57,9 @@ func SubAdd(c *gin.Context) {
 	token := c.PostForm("token")
 	configs := c.PostForm("config") // 这里的 configString 是前端传来的 JSON 字符串
 	nodes := c.PostForm("nodes")
+	nodeIDs := c.PostForm("nodeIds")
 
-	if name == "" || nodes == "" {
+	if name == "" || (nodes == "" && nodeIDs == "") {
 		c.JSON(400, gin.H{
 			"msg": "订阅名称或节点不能为空",
 		})
@@ -74,36 +75,21 @@ func SubAdd(c *gin.Context) {
 		return
 	}
 
-	// 1. 根据 nodesString 字符串，构建 models.Node 数组
-	var NodesData []models.Node
-
-	for _, nodeName := range strings.Split(nodes, ",") {
-		if strings.TrimSpace(nodeName) == "" {
-			continue
-		}
-		FirstNode := models.Node{
-			Name: nodeName,
-		}
-
-		// 查出node的数据
-		result := models.DB.Model(models.Node{}).Where("name = ?", FirstNode.Name).First(&FirstNode)
-		if result.Error != nil {
-			log.Println(result.Error)
-			c.JSON(400, gin.H{
-				"msg": result.Error,
-			})
-			return
-		}
-		// 插入nodes
-		NodesData = append(NodesData, FirstNode)
+	NodesData, normalizedNodeIDs, err := loadSubscriptionNodes(nodeIDs, nodes)
+	if err != nil {
+		log.Println(err)
+		c.JSON(400, gin.H{
+			"msg": err.Error(),
+		})
+		return
 	}
 	sub := models.Subcription{
-		Name:      name,
-		Token:     normalizedToken,
-		Config:    configs,   // 这里直接赋值字符串
-		NodeOrder: nodes,     // 这里直接赋值字符串
-		Nodes:     NodesData, // 这里直接赋值 nodes 数组
-
+		Name:         name,
+		Token:        normalizedToken,
+		Config:       configs,
+		NodeOrder:    nodes,
+		NodeOrderIDs: normalizedNodeIDs,
+		Nodes:        NodesData,
 	}
 	err = sub.Add()
 	if err != nil {
@@ -126,8 +112,9 @@ func SubUpdate(c *gin.Context) {
 	token := c.PostForm("token")
 	configs := c.PostForm("config") // 这里的 configString 是前端传来的 JSON 字符串
 	nodes := c.PostForm("nodes")
+	nodeIDs := c.PostForm("nodeIds")
 
-	if NewName == "" || nodes == "" {
+	if NewName == "" || (nodes == "" && nodeIDs == "") {
 		c.JSON(400, gin.H{
 			"msg": "订阅名称或节点不能为空",
 		})
@@ -158,36 +145,21 @@ func SubUpdate(c *gin.Context) {
 		return
 	}
 
-	// 1. 根据 nodesString 字符串，构建 models.Node 数组
-	var NodesData []models.Node
-
-	for _, nodeName := range strings.Split(nodes, ",") {
-		if strings.TrimSpace(nodeName) == "" {
-			continue
-		}
-		FirstNode := models.Node{
-			Name: nodeName,
-		}
-
-		// 查出node的数据
-		result := models.DB.Model(models.Node{}).Where("name = ?", FirstNode.Name).First(&FirstNode)
-		if result.Error != nil {
-			log.Println(result.Error)
-			c.JSON(400, gin.H{
-				"msg": result.Error,
-			})
-			return
-		}
-		// 插入nodes
-		NodesData = append(NodesData, FirstNode)
+	NodesData, normalizedNodeIDs, err := loadSubscriptionNodes(nodeIDs, nodes)
+	if err != nil {
+		log.Println(err)
+		c.JSON(400, gin.H{
+			"msg": err.Error(),
+		})
+		return
 	}
 	NewSub := models.Subcription{
-		Name:      NewName,
-		Token:     normalizedToken,
-		Config:    configs,   // 这里直接赋值字符串
-		NodeOrder: nodes,     // 这里直接赋值字符串
-		Nodes:     NodesData, // 这里直接赋值 nodes 数组
-
+		Name:         NewName,
+		Token:        normalizedToken,
+		Config:       configs,
+		NodeOrder:    nodes,
+		NodeOrderIDs: normalizedNodeIDs,
+		Nodes:        NodesData,
 	}
 
 	err = OldSub.Update(&NewSub)
@@ -202,6 +174,59 @@ func SubUpdate(c *gin.Context) {
 		"code": "00000",
 		"msg":  "更新订阅成功",
 	})
+}
+
+func loadSubscriptionNodes(nodeIDs, nodeNames string) ([]models.Node, string, error) {
+	var result []models.Node
+	var normalizedIDs []string
+	seen := map[int]bool{}
+
+	for _, rawID := range strings.Split(nodeIDs, ",") {
+		rawID = strings.TrimSpace(rawID)
+		if rawID == "" {
+			continue
+		}
+		id, err := strconv.Atoi(rawID)
+		if err != nil || id <= 0 {
+			return nil, "", fmt.Errorf("无效的节点 ID: %s", rawID)
+		}
+		if seen[id] {
+			continue
+		}
+		var item models.Node
+		if err := models.DB.First(&item, id).Error; err != nil {
+			return nil, "", fmt.Errorf("查找节点 %d 失败: %w", id, err)
+		}
+		result = append(result, item)
+		normalizedIDs = append(normalizedIDs, strconv.Itoa(item.ID))
+		seen[id] = true
+	}
+
+	if len(result) > 0 {
+		return result, strings.Join(normalizedIDs, ","), nil
+	}
+
+	for _, nodeName := range strings.Split(nodeNames, ",") {
+		nodeName = strings.TrimSpace(nodeName)
+		if nodeName == "" {
+			continue
+		}
+		var item models.Node
+		if err := models.DB.Where("name = ?", nodeName).First(&item).Error; err != nil {
+			return nil, "", fmt.Errorf("查找节点 %s 失败: %w", nodeName, err)
+		}
+		if seen[item.ID] {
+			continue
+		}
+		result = append(result, item)
+		normalizedIDs = append(normalizedIDs, strconv.Itoa(item.ID))
+		seen[item.ID] = true
+	}
+
+	if len(result) == 0 {
+		return nil, "", fmt.Errorf("订阅至少需要一个有效节点")
+	}
+	return result, strings.Join(normalizedIDs, ","), nil
 }
 
 func normalizeSubscriptionToken(name, token string) (string, error) {

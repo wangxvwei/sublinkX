@@ -124,6 +124,10 @@ func GetClash(c *gin.Context, subName string) {
 		c.String(http.StatusBadGateway, err.Error())
 		return
 	}
+	if err := validateClientLinks(links, "clash"); err != nil {
+		c.String(http.StatusBadRequest, err.Error())
+		return
+	}
 
 	configs, err := parseSubConfig(sub.Config)
 	if err != nil {
@@ -153,6 +157,10 @@ func GetSurge(c *gin.Context, subName string) {
 	links, err := collectNodeLinks(sub.Nodes)
 	if err != nil {
 		c.String(http.StatusBadGateway, err.Error())
+		return
+	}
+	if err := validateClientLinks(links, "surge"); err != nil {
+		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -289,6 +297,69 @@ func splitLinks(raw string) []string {
 		}
 	}
 	return links
+}
+
+func validateClientLinks(links []string, client string) error {
+	for _, link := range links {
+		scheme := strings.ToLower(strings.SplitN(link, "://", 2)[0])
+		switch client {
+		case "clash":
+			switch scheme {
+			case "ss", "ssr", "trojan", "vmess", "vless", "hy", "hysteria", "hy2", "hysteria2", "tuic":
+			default:
+				return fmt.Errorf("clash subscription contains unsupported node protocol %q: %s", scheme, shortNodeLink(link))
+			}
+		case "surge":
+			switch scheme {
+			case "ss", "trojan", "vmess", "hy2", "hysteria2", "tuic":
+			default:
+				return fmt.Errorf("surge subscription contains unsupported node protocol %q: %s", scheme, shortNodeLink(link))
+			}
+		}
+		if err := validateNodeLinkDecodes(link, scheme); err != nil {
+			return fmt.Errorf("%s subscription contains invalid %s node %s: %w", client, scheme, shortNodeLink(link), err)
+		}
+	}
+	return nil
+}
+
+func validateNodeLinkDecodes(link, scheme string) error {
+	switch scheme {
+	case "ss":
+		_, err := node.DecodeSSURL(link)
+		return err
+	case "ssr":
+		_, err := node.DecodeSSRURL(link)
+		return err
+	case "trojan":
+		_, err := node.DecodeTrojanURL(link)
+		return err
+	case "vmess":
+		_, err := node.DecodeVMESSURL(link)
+		return err
+	case "vless":
+		_, err := node.DecodeVLESSURL(link)
+		return err
+	case "hy", "hysteria":
+		_, err := node.DecodeHYURL(link)
+		return err
+	case "hy2", "hysteria2":
+		_, err := node.DecodeHY2URL(link)
+		return err
+	case "tuic":
+		_, err := node.DecodeTuicURL(link)
+		return err
+	default:
+		return nil
+	}
+}
+
+func shortNodeLink(link string) string {
+	link = strings.TrimSpace(link)
+	if len(link) <= 80 {
+		return link
+	}
+	return link[:80] + "..."
 }
 
 func setInlineFilename(c *gin.Context, filename string) {

@@ -3,6 +3,7 @@ package models
 import (
 	// 用于将配置解析为结构体
 	"log"
+	"strconv"
 	"strings" // 用于处理逗号分隔的字符串
 
 	"gorm.io/gorm"
@@ -11,13 +12,14 @@ import (
 // Subcription 结构体
 type Subcription struct {
 	gorm.Model
-	ID        int
-	Name      string
-	Token     string    `gorm:"index"`
-	Config    string    `gorm:"type:text"` // Config 存储为 JSON 字符串
-	NodeOrder string    `gorm:"type:text"`
-	Nodes     []Node    `gorm:"many2many:subcription_nodes;"`
-	SubLogs   []SubLogs `gorm:"foreignKey:SubcriptionID;"`
+	ID           int
+	Name         string
+	Token        string    `gorm:"index"`
+	Config       string    `gorm:"type:text"` // Config 存储为 JSON 字符串
+	NodeOrder    string    `gorm:"type:text"`
+	NodeOrderIDs string    `gorm:"type:text"`
+	Nodes        []Node    `gorm:"many2many:subcription_nodes;"`
+	SubLogs      []SubLogs `gorm:"foreignKey:SubcriptionID;"`
 }
 
 // Config 结构体，用于解析 Subcription.Config 字段的 JSON 内容
@@ -34,10 +36,13 @@ func (sub *Subcription) Add() error {
 	// 在创建订阅时，如果 sub.Nodes 已经被前端填充并排序，可以将其名称转换为 NodeOrder 字符串
 	if len(sub.Nodes) > 0 {
 		names := make([]string, len(sub.Nodes))
+		ids := make([]string, len(sub.Nodes))
 		for i, node := range sub.Nodes {
 			names[i] = node.Name
+			ids[i] = strconv.Itoa(node.ID)
 		}
 		sub.NodeOrder = strings.Join(names, ",")
+		sub.NodeOrderIDs = strings.Join(ids, ",")
 	}
 
 	// 首先创建 Subcription 记录，不包括多对多关系
@@ -62,16 +67,23 @@ func (sub *Subcription) Update(NewName *Subcription) error {
 	existingSub.Name = NewName.Name // 新名称
 	existingSub.Token = NewName.Token
 	existingSub.Config = NewName.Config
+	existingSub.NodeOrderIDs = NewName.NodeOrderIDs
 
 	// 更新 NodeOrder 字段
 	if len(NewName.Nodes) > 0 {
 		names := make([]string, len(NewName.Nodes))
+		ids := make([]string, len(NewName.Nodes))
 		for i, node := range NewName.Nodes {
 			names[i] = node.Name
+			ids[i] = strconv.Itoa(node.ID)
 		}
 		existingSub.NodeOrder = strings.Join(names, ",")
+		if strings.TrimSpace(existingSub.NodeOrderIDs) == "" {
+			existingSub.NodeOrderIDs = strings.Join(ids, ",")
+		}
 	} else {
 		existingSub.NodeOrder = "" // 如果没有节点，清空
+		existingSub.NodeOrderIDs = ""
 	}
 
 	// 保存更新
@@ -91,23 +103,8 @@ func (sub *Subcription) Find() error {
 	if err := DB.Preload("Nodes").Preload("SubLogs").Where("id = ? or name = ?", sub.ID, sub.Name).First(sub).Error; err != nil {
 		return err
 	}
-	// 根据 NodeOrder 字段重新排序 Nodes
-	if sub.NodeOrder != "" && len(sub.Nodes) > 0 {
-		orderedNames := strings.Split(sub.NodeOrder, ",")
-		nodeMap := make(map[string]Node)
-		for _, node := range sub.Nodes {
-			log.Println("node:", node)
-			nodeMap[node.Name] = node
-		}
-
-		var reorderedNodes []Node
-		for _, name := range orderedNames {
-			trimmedName := strings.TrimSpace(name)
-			if node, ok := nodeMap[trimmedName]; ok {
-				reorderedNodes = append(reorderedNodes, node)
-			}
-		}
-		sub.Nodes = reorderedNodes
+	if len(sub.Nodes) > 0 {
+		sub.Nodes = orderSubscriptionNodes(sub.Nodes, sub.NodeOrderIDs, sub.NodeOrder)
 	}
 
 	return nil
@@ -122,25 +119,60 @@ func (sub *Subcription) List() ([]Subcription, error) {
 	}
 
 	for i := range subs {
-		// 根据 NodeOrder 字段重新排序每个订阅的 Nodes
-		if subs[i].NodeOrder != "" && len(subs[i].Nodes) > 0 {
-			orderedNames := strings.Split(subs[i].NodeOrder, ",")
-			nodeMap := make(map[string]Node) // 用于快速查找节点对象
-			for _, node := range subs[i].Nodes {
-				nodeMap[node.Name] = node
-			}
-
-			var reorderedNodes []Node
-			for _, name := range orderedNames {
-				trimmedName := strings.TrimSpace(name)
-				if node, ok := nodeMap[trimmedName]; ok {
-					reorderedNodes = append(reorderedNodes, node)
-				}
-			}
-			subs[i].Nodes = reorderedNodes
+		if len(subs[i].Nodes) > 0 {
+			subs[i].Nodes = orderSubscriptionNodes(subs[i].Nodes, subs[i].NodeOrderIDs, subs[i].NodeOrder)
 		}
 	}
 	return subs, nil
+}
+
+func orderSubscriptionNodes(nodes []Node, orderIDs, orderNames string) []Node {
+	used := map[int]bool{}
+	ordered := make([]Node, 0, len(nodes))
+
+	if strings.TrimSpace(orderIDs) != "" {
+		byID := make(map[int]Node, len(nodes))
+		for _, node := range nodes {
+			byID[node.ID] = node
+		}
+		for _, rawID := range strings.Split(orderIDs, ",") {
+			id, err := strconv.Atoi(strings.TrimSpace(rawID))
+			if err != nil || used[id] {
+				continue
+			}
+			if node, ok := byID[id]; ok {
+				ordered = append(ordered, node)
+				used[id] = true
+			}
+		}
+	}
+
+	if len(ordered) == 0 && strings.TrimSpace(orderNames) != "" {
+		byName := make(map[string][]Node, len(nodes))
+		for _, node := range nodes {
+			byName[node.Name] = append(byName[node.Name], node)
+		}
+		for _, rawName := range strings.Split(orderNames, ",") {
+			name := strings.TrimSpace(rawName)
+			if len(byName[name]) == 0 {
+				continue
+			}
+			node := byName[name][0]
+			byName[name] = byName[name][1:]
+			if used[node.ID] {
+				continue
+			}
+			ordered = append(ordered, node)
+			used[node.ID] = true
+		}
+	}
+
+	for _, node := range nodes {
+		if !used[node.ID] {
+			ordered = append(ordered, node)
+		}
+	}
+	return ordered
 }
 
 // IPlogUpdate 更新订阅日志 (与节点排序无关，保持不变)

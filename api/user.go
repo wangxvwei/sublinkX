@@ -98,7 +98,6 @@ func UserPages(c *gin.Context) {
 func UserSet(c *gin.Context) {
 	NewUsername := c.PostForm("username")
 	NewPassword := c.PostForm("password")
-	log.Println(NewUsername, NewPassword)
 	if NewUsername == "" || NewPassword == "" {
 		c.JSON(400, gin.H{
 			"code": "00001",
