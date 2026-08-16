@@ -77,8 +77,16 @@ type xuiInbound struct {
 
 type xuiClient struct {
 	ID    string `json:"id"`
+	Auth  string `json:"auth"`
 	Email string `json:"email"`
 	SubID string `json:"subId"`
+}
+
+func (c xuiClient) Identifier() string {
+	if id := strings.TrimSpace(c.ID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(c.Auth)
 }
 
 type xuiInboundSettings struct {
@@ -297,12 +305,13 @@ func readXUIClients(xuiDB *gorm.DB) ([]xuiClientEntry, error) {
 			continue
 		}
 		for _, client := range settings.Clients {
-			if strings.TrimSpace(client.ID) == "" {
+			clientID := client.Identifier()
+			if clientID == "" {
 				continue
 			}
 			clients = append(clients, xuiClientEntry{
 				InboundID: inbound.ID,
-				ID:        strings.TrimSpace(client.ID),
+				ID:        clientID,
 				Email:     strings.TrimSpace(client.Email),
 				SubID:     strings.TrimSpace(client.SubID),
 			})

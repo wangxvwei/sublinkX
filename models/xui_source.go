@@ -74,6 +74,7 @@ type XUISourceView struct {
 	Username        string     `json:"username"`
 	AuthType        string     `json:"authType"`
 	PanelBaseURL    string     `json:"panelBaseUrl"`
+	APIToken        string     `json:"apiToken"`
 	XUIDBPath       string     `json:"xuiDbPath"`
 	SubBaseURL      string     `json:"subBaseUrl"`
 	SubPath         string     `json:"subPath"`
@@ -99,6 +100,7 @@ func (s XUISource) View() XUISourceView {
 		Username:        s.Username,
 		AuthType:        authType,
 		PanelBaseURL:    s.PanelBaseURL,
+		APIToken:        s.APIToken,
 		XUIDBPath:       s.XUIDBPath,
 		SubBaseURL:      s.SubBaseURL,
 		SubPath:         s.SubPath,
@@ -632,7 +634,7 @@ func (s XUISource) fetchAPINodes() ([]XUINodeLink, error) {
 			continue
 		}
 		for _, client := range settings.Clients {
-			client.ID = strings.TrimSpace(client.ID)
+			client.ID = client.Identifier()
 			client.Email = strings.TrimSpace(client.Email)
 			client.SubID = strings.TrimSpace(client.SubID)
 			if client.ID == "" || client.SubID == "" {
@@ -968,7 +970,7 @@ try:
         except Exception:
             continue
         for client in settings.get("clients", []):
-            client_id = str(client.get("id") or "").strip()
+            client_id = str(client.get("id") or client.get("auth") or "").strip()
             email = str(client.get("email") or client_id).strip()
             sub_id = str(client.get("subId") or "").strip()
             if not client_id or not sub_id:

@@ -470,7 +470,6 @@ function editSource(row: XUISource) {
     ...row,
     authType: row.authType === "apiToken" ? "apiToken" : "password",
     password: "",
-    apiToken: "",
   };
   parseRewriteRules(row.rewriteRules || "");
   sourceAdvanced.value = ["sync", "rules"];
@@ -528,7 +527,6 @@ async function saveSource() {
         ...sourceForm.value,
         ...data,
         password: "",
-        apiToken: "",
       };
     }
     ElMessage.success(wasEditing ? "来源已更新" : "来源已创建");
@@ -996,9 +994,7 @@ function formatSyncResult(result?: SyncResult) {
                 <el-form-item label="API Token">
                   <el-input
                     v-model="sourceForm.apiToken"
-                    type="password"
-                    show-password
-                    placeholder="编辑时留空保留原 Token"
+                    placeholder="保存后显示当前 Token"
                   />
                 </el-form-item>
               </div>
