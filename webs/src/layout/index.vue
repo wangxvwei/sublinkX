@@ -1,5 +1,5 @@
 <template>
-  <div class="wh-full" :class="classObj">
+  <div class="wh-full workspace-shell" :class="classObj">
     <!-- 遮罩层 -->
     <div
       v-if="classObj.mobile && classObj.openSidebar"
@@ -125,10 +125,7 @@ function toggleSidebar() {
   height: 100%;
   overflow: hidden;
   border-right: 1px solid #e5e7eb;
-  background:
-    linear-gradient(180deg, rgba(239, 246, 255, 0.96), rgba(248, 250, 252, 0.86) 240px),
-    #f6f8fb;
-  box-shadow: 8px 0 24px rgba(15, 23, 42, 0.04);
+  background: var(--sx-surface);
   transition: width 0.28s;
 
   :deep(.el-menu) {
@@ -150,7 +147,9 @@ function toggleSidebar() {
       padding-right: 14px;
       border: 1px solid transparent;
       border-radius: 8px;
-      color: #475569 !important;
+      color: var(--sx-muted) !important;
+      font-size: 14px;
+      font-weight: 400;
       line-height: 46px;
       transition:
         color 0.18s ease,
@@ -165,28 +164,26 @@ function toggleSidebar() {
       border-color: #e5e7eb;
       background: rgba(255, 255, 255, 0.78) !important;
       color: #2563eb !important;
-      transform: translateY(-1px);
     }
 
     :deep(.el-menu-item.is-active) {
-      border-color: #dbeafe;
-      background: rgba(255, 255, 255, 0.96) !important;
-      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
-      color: #2563eb !important;
-      font-weight: 700;
+      border-color: transparent;
+      background: var(--sx-accent-soft) !important;
+      color: #4f46e5 !important;
+      font-weight: 500;
     }
 
     :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
       color: #2563eb !important;
-      font-weight: 700;
+      font-weight: 500;
     }
 
     :deep(.el-sub-menu .el-menu) {
       margin: 2px 10px 8px;
       padding: 4px 0;
-      border: 1px solid #edf2f7;
+      border: none;
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.55) !important;
+      background: transparent !important;
     }
 
     :deep(.el-sub-menu .el-menu-item) {
@@ -377,7 +374,7 @@ function toggleSidebar() {
     .sidebar-container {
       pointer-events: none;
       transition-duration: 0.3s;
-      transform: translate3d(-210px, 0, 0);
+      transform: translate3d(-100%, 0, 0);
     }
 
     .main-container {

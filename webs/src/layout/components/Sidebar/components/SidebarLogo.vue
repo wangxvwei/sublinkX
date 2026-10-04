@@ -37,11 +37,10 @@ const logo = ref(new URL(`../../../../assets/logo.png`, import.meta.url).href);
   background: transparent;
 
   a {
-    height: 42px;
-    border: 1px solid #e5e7eb;
+    height: 46px;
+    border: none;
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.96);
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    background: transparent;
   }
 
   .logo-image {
@@ -52,9 +51,9 @@ const logo = ref(new URL(`../../../../assets/logo.png`, import.meta.url).href);
   .logo-title {
     flex-shrink: 0; /* 防止容器在空间不足时缩小 */
     margin-left: 10px;
-    color: #111827;
-    font-size: 16px;
-    font-weight: 750;
+    color: var(--sx-text);
+    font-size: 19px;
+    font-weight: 600;
     letter-spacing: 0;
   }
 }

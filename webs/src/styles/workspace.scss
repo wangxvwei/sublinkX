@@ -1,0 +1,275 @@
+:root {
+  --sx-page: #f5f7fb;
+  --sx-surface: #fff;
+  --sx-text: #172033;
+  --sx-muted: #66758b;
+  --sx-border: #e4e9f1;
+  --sx-accent-soft: #eef2ff;
+  --sx-radius: 12px;
+  --el-font-size-extra-large: 22px;
+  --el-font-size-large: 18px;
+  --el-font-size-medium: 16px;
+  --el-font-size-base: 14px;
+  --el-font-size-small: 13px;
+  --el-font-size-extra-small: 12px;
+}
+html.dark {
+  --sx-page: #131923;
+  --sx-surface: #1c2431;
+  --sx-text: #e3e9f3;
+  --sx-muted: #a0aec2;
+  --sx-border: #334155;
+  --sx-accent-soft: #263457;
+}
+input,
+textarea,
+button,
+select {
+  font: inherit;
+}
+.workspace-shell .app-main {
+  .dashboard-page,
+  .nodes-page,
+  .subs-page,
+  .settings-page,
+  .templates-page {
+    padding: 24px;
+    color: var(--sx-text);
+    background: var(--sx-page);
+  }
+  .hero-panel,
+  .page-header,
+  .node-toolbar,
+  .settings-hero {
+    padding: 22px 24px;
+    border: 1px solid var(--sx-border);
+    border-radius: var(--sx-radius);
+    background: var(--sx-surface);
+    box-shadow: none;
+  }
+  .hero-panel h1,
+  .page-header h2,
+  .node-toolbar h2,
+  .settings-hero h1 {
+    margin: 0 0 8px;
+    color: var(--sx-text);
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: -0.3px;
+  }
+  .panel-head h2,
+  .panel-head h3 {
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .hero-panel p,
+  .page-header p,
+  .node-toolbar p,
+  .panel-head p,
+  .settings-hero p {
+    color: var(--sx-muted);
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .panel,
+  .metric-card,
+  .summary-item,
+  .workspace-panel,
+  .source-list,
+  .source-editor,
+  .content-card {
+    border-color: var(--sx-border);
+    border-radius: var(--sx-radius);
+    background: var(--sx-surface);
+    box-shadow: 0 2px 8px rgb(24 39 75 / 3%);
+  }
+  .metric-card strong,
+  .summary-item strong {
+    font-size: 28px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+}
+.el-form-item__label {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+  border-radius: 7px;
+}
+.el-input__wrapper,
+.el-select__wrapper {
+  min-height: 38px;
+}
+.el-input__inner,
+.el-select__selected-item,
+.el-select-dropdown__item,
+.el-checkbox__label,
+.el-radio__label {
+  font-size: 14px;
+  font-weight: 400;
+}
+.el-table {
+  font-size: 14px;
+}
+.el-table th.el-table__cell {
+  font-weight: 500;
+}
+.el-table .cell {
+  line-height: 1.65;
+}
+.el-table .el-button.is-link {
+  padding: 5px 6px;
+}
+.el-table .el-button.is-link + .el-button {
+  margin-left: 4px;
+}
+.el-dialog {
+  max-width: calc(100vw - 24px);
+  border-radius: 14px;
+  --el-dialog-padding-primary: 24px;
+}
+.el-dialog__title {
+  font-size: 19px;
+  font-weight: 600;
+}
+.el-dialog__header {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--sx-border);
+}
+.el-dialog__body {
+  padding-top: 20px;
+  max-height: calc(85vh - 155px);
+  overflow-y: auto;
+  color: var(--sx-text);
+  font-size: 14px;
+}
+.el-dialog__footer {
+  padding-top: 16px;
+  border-top: 1px solid var(--sx-border);
+}
+.subscription-editor .el-dialog__body {
+  max-height: calc(90vh - 155px);
+  overflow-y: auto;
+}
+.subscription-editor .el-dialog__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.el-collapse-item__header {
+  font-size: 14px;
+  font-weight: 500;
+}
+.el-collapse-item__content {
+  font-size: 14px;
+}
+.el-tabs__item {
+  font-size: 14px;
+  font-weight: 500;
+}
+.el-message .el-message__content {
+  overflow-wrap: anywhere;
+  font-weight: 400;
+}
+.field-help {
+  width: 100%;
+  margin: 7px 0 0;
+  color: var(--sx-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.field-help code {
+  color: var(--sx-text);
+  font-size: 12px;
+}
+.form-section {
+  padding-bottom: 22px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--sx-border);
+}
+.form-section__heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.form-section__heading h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.form-section__number {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  color: #4f46e5;
+  background: var(--sx-accent-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+.form-section__heading p {
+  margin: 3px 0 0;
+  color: var(--sx-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.workflow-guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  padding: 13px 16px;
+  margin-bottom: 18px;
+  border: 1px solid var(--sx-border);
+  border-radius: 9px;
+  color: var(--sx-muted);
+  background: var(--sx-surface);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.workflow-guide span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.workflow-guide b {
+  color: #4f46e5;
+  font-weight: 600;
+}
+:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 3px;
+}
+@media (max-width: 760px) {
+  .workspace-shell .app-main {
+    .dashboard-page,
+    .nodes-page,
+    .subs-page,
+    .settings-page,
+    .templates-page {
+      padding: 14px;
+    }
+    .hero-panel,
+    .page-header,
+    .node-toolbar,
+    .settings-hero {
+      padding: 18px;
+    }
+    .hero-panel h1,
+    .page-header h2,
+    .node-toolbar h2,
+    .settings-hero h1 {
+      font-size: 21px;
+    }
+  }
+  .el-dialog {
+    --el-dialog-padding-primary: 16px;
+  }
+}

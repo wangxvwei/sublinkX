@@ -38,7 +38,7 @@ func GetMenus(c *gin.Context) {
 			Meta: Meta{
 				Title:  "system",
 				Icon:   "system",
-				Hidden: true,
+				Hidden: false,
 				Roles:  []string{"ADMIN"},
 			},
 			Children: []Child{
@@ -49,7 +49,7 @@ func GetMenus(c *gin.Context) {
 					Meta: Meta{
 						Title:     "userset",
 						Icon:      "role",
-						Hidden:    true,
+						Hidden:    false,
 						Roles:     []string{"ADMIN"},
 						KeepAlive: true,
 					},
@@ -122,6 +122,9 @@ func GetMenus(c *gin.Context) {
 			},
 		},
 	}
+	// Follow the workflow: prepare nodes, create subscriptions, then adjust templates.
+	menus[0], menus[1] = menus[1], menus[0]
+	menus[0].Children[0], menus[0].Children[1] = menus[0].Children[1], menus[0].Children[0]
 	c.JSON(200, gin.H{
 		"code": "00000",
 		"data": menus,

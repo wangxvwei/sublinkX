@@ -1,14 +1,14 @@
 export default {
   // 路由国际化
   route: {
-    dashboard: "首页",
+    dashboard: "概览",
     document: "项目文档",
-    userset: "系统设置",
-    system:"系统管理",
-    nodelist:"节点列表",
-    sublist:"订阅列表",
-    subcription:"订阅管理",
-    templatelist:"模板列表",
+    userset: "账户与更新",
+    system:"系统设置",
+    nodelist:"节点与来源",
+    sublist:"我的订阅",
+    subcription:"订阅工作台",
+    templatelist:"输出模板",
   },
   // 登录页面国际化
   login: {

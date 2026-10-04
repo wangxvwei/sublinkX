@@ -669,10 +669,10 @@ func (s XUISource) fetchAPINodes() ([]XUINodeLink, error) {
 			})
 		}
 	}
+	if lastSubscriptionErr != nil {
+		return nil, fmt.Errorf("subscription fetch failed for x-ui source %s/%s; existing nodes were kept: %w", subBaseURL, subPath, lastSubscriptionErr)
+	}
 	if len(nodes) == 0 && clientsSeen > 0 {
-		if lastSubscriptionErr != nil {
-			return nil, fmt.Errorf("found %d x-ui clients but no subscription links were fetched from %s/%s: %w", clientsSeen, subBaseURL, subPath, lastSubscriptionErr)
-		}
 		return nil, fmt.Errorf("found %d x-ui clients but no matching subscription links were found from %s/%s", clientsSeen, subBaseURL, subPath)
 	}
 	return nodes, nil
@@ -706,13 +706,7 @@ func (s XUISource) fetchAPIInbounds(panelBaseURL string) ([]xuiAPIInbound, error
 	req.Header.Set("Authorization", "Bearer "+s.APIToken)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-	client := http.Client{
-		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: insecureTLSConfig(),
-		},
-	}
-	resp, err := client.Do(req)
+	resp, err := doXUIRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -752,13 +746,7 @@ func (s XUISource) detectAPISubscriptionSettings(panelBaseURL string) (string, s
 	}
 	req.Header.Set("Authorization", "Bearer "+s.APIToken)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-	client := http.Client{
-		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: insecureTLSConfig(),
-		},
-	}
-	resp, err := client.Do(req)
+	resp, err := doXUIRequest(req)
 	if err != nil {
 		return "", "", err
 	}

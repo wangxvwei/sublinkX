@@ -5,10 +5,10 @@ export default {
     document: "Document",
     userset: "System Settings",
     system:"system management",
-    nodelist:"Node List",
-    sublist:"Subscription List",
-    subcription:"Subscription Management",
-    templatelist:"Template List",
+    nodelist:"Nodes & Sources",
+    sublist:"My Subscriptions",
+    subcription:"Subscription Workspace",
+    templatelist:"Output Templates",
   },
   // 登录页面国际化
   login: {

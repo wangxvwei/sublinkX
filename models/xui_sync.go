@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -330,14 +329,11 @@ func readXUISetting(xuiDB *gorm.DB, key string) string {
 
 func fetchXUISubscription(baseURL, subPath, subID string) ([]string, error) {
 	u := strings.TrimRight(baseURL, "/") + "/" + strings.Trim(subPath, "/") + "/" + url.PathEscape(subID)
-	client := http.Client{
-		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: insecureTLSConfig(),
-		},
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
 	}
-
-	resp, err := client.Get(u)
+	resp, err := doXUIRequest(req)
 	if err != nil {
 		return nil, err
 	}

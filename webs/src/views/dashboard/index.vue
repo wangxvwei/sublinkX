@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { Collection, Connection, DataLine, Link, Refresh } from "@element-plus/icons-vue";
+import {
+  Collection,
+  Connection,
+  DataLine,
+  Link,
+  Refresh,
+} from "@element-plus/icons-vue";
 import { getNodeTotal, getSubTotal } from "@/api/total";
 import { getNodes, GetGroup } from "@/api/subcription/node";
 import { getSubs } from "@/api/subcription/subs";
@@ -56,8 +62,12 @@ const greeting = computed(() => {
 const groupedNodeCount = computed(
   () => nodes.value.filter((item) => (item.GroupNodes?.length ?? 0) > 0).length
 );
-const ungroupedNodeCount = computed(() => Math.max(nodeTotal.value - groupedNodeCount.value, 0));
-const xhttpNodeCount = computed(() => nodes.value.filter((item) => isXhttpNode(item.Link)).length);
+const ungroupedNodeCount = computed(() =>
+  Math.max(nodeTotal.value - groupedNodeCount.value, 0)
+);
+const xhttpNodeCount = computed(
+  () => nodes.value.filter((item) => isXhttpNode(item.Link)).length
+);
 const protocolStats = computed(() => {
   const map = new Map<string, number>();
   nodes.value.forEach((item) => {
@@ -110,20 +120,39 @@ onMounted(() => {
 async function refreshDashboard() {
   loading.value = true;
   try {
-    const [subTotalResult, nodeTotalResult, nodesResult, groupsResult, subsResult] =
-      await Promise.allSettled([getSubTotal(), getNodeTotal(), getNodes(), GetGroup(), getSubs()]);
+    const [
+      subTotalResult,
+      nodeTotalResult,
+      nodesResult,
+      groupsResult,
+      subsResult,
+    ] = await Promise.allSettled([
+      getSubTotal(),
+      getNodeTotal(),
+      getNodes(),
+      GetGroup(),
+      getSubs(),
+    ]);
 
-    if (subTotalResult.status === "fulfilled") subTotal.value = Number(subTotalResult.value.data ?? 0);
-    if (nodeTotalResult.status === "fulfilled") nodeTotal.value = Number(nodeTotalResult.value.data ?? 0);
+    if (subTotalResult.status === "fulfilled")
+      subTotal.value = Number(subTotalResult.value.data ?? 0);
+    if (nodeTotalResult.status === "fulfilled")
+      nodeTotal.value = Number(nodeTotalResult.value.data ?? 0);
     if (nodesResult.status === "fulfilled") {
-      nodes.value = Array.isArray(nodesResult.value.data) ? nodesResult.value.data : [];
+      nodes.value = Array.isArray(nodesResult.value.data)
+        ? nodesResult.value.data
+        : [];
       if (!nodeTotal.value) nodeTotal.value = nodes.value.length;
     }
     if (groupsResult.status === "fulfilled") {
-      groups.value = Array.isArray(groupsResult.value.data) ? groupsResult.value.data : [];
+      groups.value = Array.isArray(groupsResult.value.data)
+        ? groupsResult.value.data
+        : [];
     }
     if (subsResult.status === "fulfilled") {
-      subs.value = Array.isArray(subsResult.value.data) ? subsResult.value.data : [];
+      subs.value = Array.isArray(subsResult.value.data)
+        ? subsResult.value.data
+        : [];
       if (!subTotal.value) subTotal.value = subs.value.length;
     }
   } finally {
@@ -156,7 +185,8 @@ function formatGroups(row: NodeItem) {
 
 function getSubscriptionNodeCount(row: SubItem) {
   if (row.Nodes?.length) return row.Nodes.length;
-  if (row.NodeOrderIDs) return row.NodeOrderIDs.split(",").filter(Boolean).length;
+  if (row.NodeOrderIDs)
+    return row.NodeOrderIDs.split(",").filter(Boolean).length;
   if (row.NodeOrder) return row.NodeOrder.split(",").filter(Boolean).length;
   return 0;
 }
@@ -171,17 +201,28 @@ function goNodes() {
     <section class="hero-panel">
       <div class="hero-copy">
         <span class="eyebrow">sublinkX 控制台</span>
-        <h1>{{ greeting }}</h1>
-        <p>这里集中展示订阅、节点、分组和 xhttp 支持情况。你可以从首页快速判断当前配置是否适合 Clash Verge Rev / Mihomo。</p>
+        <h1>订阅工作台</h1>
+        <p>
+          先准备节点，再创建订阅，最后把订阅地址导入客户端。这里可查看节点、分组和订阅的维护情况。
+        </p>
       </div>
       <div class="hero-actions">
-        <el-button :icon="Refresh" @click="refreshDashboard">刷新数据</el-button>
-        <el-button type="primary" :icon="Link" @click="goNodes">管理节点</el-button>
+        <el-button :icon="Refresh" @click="refreshDashboard"
+          >刷新数据</el-button
+        >
+        <el-button type="primary" :icon="Link" @click="goNodes"
+          >管理节点</el-button
+        >
       </div>
     </section>
 
     <section class="metric-grid">
-      <div v-for="item in metrics" :key="item.label" class="metric-card" :class="`tone-${item.tone}`">
+      <div
+        v-for="item in metrics"
+        :key="item.label"
+        class="metric-card"
+        :class="`tone-${item.tone}`"
+      >
         <div class="metric-icon">
           <el-icon><component :is="item.icon" /></el-icon>
         </div>
@@ -197,8 +238,8 @@ function goNodes() {
       <div class="panel">
         <div class="panel-head">
           <div>
-            <h2>节点健康概览</h2>
-            <p>按维护状态快速看待整理的节点。</p>
+            <h2>节点整理情况</h2>
+            <p>查看分组完成情况；这里不代表节点连通性检测。</p>
           </div>
         </div>
         <div class="status-list">
@@ -206,12 +247,23 @@ function goNodes() {
             <span>已分组节点</span>
             <strong>{{ groupedNodeCount }}</strong>
           </div>
-          <el-progress :percentage="nodeTotal ? Math.round((groupedNodeCount / nodeTotal) * 100) : 0" :show-text="false" />
+          <el-progress
+            :percentage="
+              nodeTotal ? Math.round((groupedNodeCount / nodeTotal) * 100) : 0
+            "
+            :show-text="false"
+          />
           <div class="status-row">
             <span>未分组节点</span>
             <strong>{{ ungroupedNodeCount }}</strong>
           </div>
-          <el-progress status="warning" :percentage="nodeTotal ? Math.round((ungroupedNodeCount / nodeTotal) * 100) : 0" :show-text="false" />
+          <el-progress
+            status="warning"
+            :percentage="
+              nodeTotal ? Math.round((ungroupedNodeCount / nodeTotal) * 100) : 0
+            "
+            :show-text="false"
+          />
         </div>
       </div>
 
@@ -223,10 +275,18 @@ function goNodes() {
           </div>
         </div>
         <div v-if="protocolStats.length" class="protocol-list">
-          <div v-for="item in protocolStats" :key="item.name" class="protocol-row">
+          <div
+            v-for="item in protocolStats"
+            :key="item.name"
+            class="protocol-row"
+          >
             <span>{{ item.name }}</span>
             <div class="protocol-bar">
-              <i :style="{ width: `${Math.max((item.count / Math.max(nodeTotal, 1)) * 100, 8)}%` }" />
+              <i
+                :style="{
+                  width: `${Math.max((item.count / Math.max(nodeTotal, 1)) * 100, 8)}%`,
+                }"
+              />
             </div>
             <strong>{{ item.count }}</strong>
           </div>
@@ -248,7 +308,9 @@ function goNodes() {
               <strong>{{ item.Name }}</strong>
               <span>{{ formatGroups(item) }}</span>
             </div>
-            <el-tag effect="plain" round>{{ isXhttpNode(item.Link) ? "VLESS xhttp" : getProtocol(item.Link) }}</el-tag>
+            <el-tag effect="plain" round>{{
+              isXhttpNode(item.Link) ? "VLESS xhttp" : getProtocol(item.Link)
+            }}</el-tag>
           </div>
         </div>
         <el-empty v-else description="还没有节点" :image-size="80" />
@@ -262,7 +324,11 @@ function goNodes() {
           </div>
         </div>
         <div v-if="recentSubs.length" class="subscription-list">
-          <div v-for="item in recentSubs" :key="item.ID" class="subscription-row">
+          <div
+            v-for="item in recentSubs"
+            :key="item.ID"
+            class="subscription-row"
+          >
             <strong>{{ item.Name }}</strong>
             <span>{{ getSubscriptionNodeCount(item) }} 个节点</span>
           </div>
@@ -279,7 +345,11 @@ function goNodes() {
   padding: 20px;
   color: #1f2937;
   background:
-    linear-gradient(180deg, rgba(239, 246, 255, 0.9), rgba(248, 250, 252, 0.4) 260px),
+    linear-gradient(
+      180deg,
+      rgba(239, 246, 255, 0.9),
+      rgba(248, 250, 252, 0.4) 260px
+    ),
     #f6f8fb;
 }
 

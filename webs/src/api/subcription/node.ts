@@ -99,6 +99,7 @@ export function SyncXUISource(id: number){
   return request({
     url: `/api/v1/xui-sources/${id}/sync`,
     method: "post",
+    timeout: 180000,
   });
 }
 

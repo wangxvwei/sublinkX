@@ -375,16 +375,18 @@ onMounted(() => {
 <style lang="scss" scoped>
 .tags-container {
   width: 100%;
-  height: 34px;
+  height: $tags-view-height;
   background-color: var(--el-bg-color);
   border: 1px solid var(--el-border-color-light);
   box-shadow: 0 1px 1px var(--el-box-shadow-light);
 
   .tags-item {
     display: inline-block;
-    padding: 3px 8px;
+    padding: 4px 12px;
     margin: 4px 0 0 5px;
-    font-size: 12px;
+    font-size: 13px;
+    line-height: 22px;
+    border-radius: 6px;
     cursor: pointer;
     border: 1px solid var(--el-border-color-light);
 
@@ -410,8 +412,9 @@ onMounted(() => {
     }
 
     &.active {
-      color: #fff;
-      background-color: var(--el-color-primary);
+      color: var(--el-color-primary);
+      border-color: var(--el-color-primary-light-7);
+      background-color: var(--el-color-primary-light-9);
 
       &::before {
         display: inline-block;
@@ -419,7 +422,7 @@ onMounted(() => {
         height: 8px;
         margin-right: 5px;
         content: "";
-        background: #fff;
+        background: var(--el-color-primary);
         border-radius: 50%;
       }
 

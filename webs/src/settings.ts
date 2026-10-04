@@ -6,7 +6,7 @@ import { LanguageEnum } from "./enums/LanguageEnum";
 const { pkg } = __APP_INFO__;
 
 const defaultSettings: AppSettings = {
-  title: pkg.name,
+  title: "sublinkX",
   version: pkg.version,
   showSettings: true,
   tagsView: true,
@@ -16,7 +16,7 @@ const defaultSettings: AppSettings = {
   theme: ThemeEnum.LIGHT,
   size: SizeEnum.DEFAULT,
   language: LanguageEnum.ZH_CN,
-  themeColor: "#409EFF",
+  themeColor: "#4f46e5",
   watermarkEnabled: false,
   watermarkContent: pkg.name,
 };
