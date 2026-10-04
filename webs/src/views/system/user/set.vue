@@ -321,7 +321,7 @@ function formatDate(value?: string) {
           </div>
           <div>
             <h2>版本更新</h2>
-            <p>源码修改 → 测试构建 → 发布镜像 → 在这里确认更新</p>
+            <p>检查可用版本，确认后拉取正式镜像并保留现有配置。</p>
           </div>
         </div>
 
@@ -386,7 +386,7 @@ function formatDate(value?: string) {
             >重新检查</el-button
           >
           <el-button
-            type="success"
+            type="primary"
             :icon="Refresh"
             :loading="updating"
             :disabled="!updateInfo?.autoUpdate"
@@ -396,7 +396,6 @@ function formatDate(value?: string) {
           </el-button>
           <el-button
             v-if="updateInfo?.releaseUrl"
-            type="primary"
             tag="a"
             :href="updateInfo.releaseUrl"
             target="_blank"
@@ -615,7 +614,7 @@ function formatDate(value?: string) {
 .command-box code {
   min-width: 0;
   overflow-wrap: anywhere;
-  color: var(--sx-border);
+  color: #e2e8f0;
   font-family:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     monospace;

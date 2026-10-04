@@ -5,7 +5,7 @@ declare module "vue-router" {
   // 可以通过扩展 RouteMeta 接口来输入 meta 字段
   interface RouteMeta {
     alwaysShow?: boolean;
-    workspaceView?: "nodes" | "api" | "ssh";
+    workspaceView?: "nodes" | "sources";
     settingsSection?: "account" | "update";
     /** 菜单名称 */
     title?: string;

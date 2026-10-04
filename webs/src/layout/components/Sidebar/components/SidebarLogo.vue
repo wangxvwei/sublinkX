@@ -8,7 +8,7 @@
       <router-link v-else class="wh-full flex-center" to="/">
         <span class="brand-mark">S<span>↗</span></span>
         <span class="logo-title"
-          >{{ defaultSettings.title }}<small>SUBSCRIPTION STUDIO</small></span
+          >{{ defaultSettings.title }}<small>订阅管理</small></span
         >
       </router-link>
     </transition>
@@ -17,10 +17,6 @@
 
 <script lang="ts" setup>
 import defaultSettings from "@/settings";
-import { useSettingsStore } from "@/store";
-
-const settingsStore = useSettingsStore();
-
 defineProps({
   collapse: {
     type: Boolean,
@@ -52,7 +48,7 @@ defineProps({
   .logo-title {
     flex-shrink: 0; /* 防止容器在空间不足时缩小 */
     margin-left: 10px;
-    color: #f1f7f4;
+    color: var(--sx-text);
     font-size: 19px;
     font-weight: 600;
     letter-spacing: 0;
@@ -60,10 +56,9 @@ defineProps({
   .logo-title small {
     display: block;
     margin-top: 1px;
-    color: #91b4a8;
-    font-size: 8px;
+    color: var(--sx-muted);
+    font-size: 11px;
     font-weight: 400;
-    letter-spacing: 1.2px;
   }
   .brand-mark {
     display: inline-flex;
@@ -72,9 +67,9 @@ defineProps({
     gap: 1px;
     flex: 0 0 34px;
     height: 34px;
-    border-radius: 10px;
-    color: #113b2f;
-    background: #b9eccf;
+    border-radius: 9px;
+    color: #fff;
+    background: var(--el-color-primary);
     font-size: 22px;
     font-weight: 750;
   }

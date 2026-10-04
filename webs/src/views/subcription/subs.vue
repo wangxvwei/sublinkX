@@ -542,15 +542,18 @@ function formatDate(row: Sub | any) {
       >
         <div class="subscription-card-top">
           <span class="subscription-glyph"
-            ><el-icon><Link /></el-icon></span
-          ><el-checkbox
+            ><el-icon><Link /></el-icon
+          ></span>
+          <div class="subscription-card-heading">
+            <h3>{{ row.Name }}</h3>
+            <p class="subscription-card-description">Clash · Surge · V2Ray</p>
+          </div>
+          <el-checkbox
             :model-value="selectedRows.some((item) => item.ID === row.ID)"
             :aria-label="`选择订阅 ${row.Name}`"
             @change="selectCard(row, !!$event)"
           />
         </div>
-        <h3>{{ row.Name }}</h3>
-        <p class="subscription-card-description">一份订阅，多个客户端</p>
         <div class="subscription-card-stat">
           <strong>{{ getNodeCount(row) }}</strong
           ><span>个节点</span
@@ -697,7 +700,12 @@ function formatDate(row: Sub | any) {
 
       <div class="table-footer">
         <div class="batch-actions">
-          <el-button type="danger" :icon="Delete" @click="deleteSelected"
+          <el-button
+            type="danger"
+            plain
+            :disabled="!selectedRows.length"
+            :icon="Delete"
+            @click="deleteSelected"
             >删除选中</el-button
           >
         </div>
@@ -752,8 +760,7 @@ function formatDate(row: Sub | any) {
             <el-input v-model="subName" placeholder="例如：全部节点" />
           </el-form-item>
           <div class="editor-intro">
-            <el-icon><Link /></el-icon>
-            <h3>把节点整理成一份订阅</h3>
+            <h3>接下来</h3>
             <p>
               下一步选择节点与顺序，最后设置客户端输出。保存后，就能复制地址或扫码导入。
             </p>
@@ -1385,7 +1392,7 @@ function formatDate(row: Sub | any) {
   padding: 14px;
   border: 1px solid var(--sx-border);
   border-radius: 8px;
-  background: rgba(248, 250, 252, 0.72);
+  background: var(--sx-page);
 }
 
 .client-row p {

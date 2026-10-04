@@ -30,6 +30,8 @@ export const useSettingsStore = defineStore("setting", () => {
     "workspaceThemeColor",
     defaultSettings.themeColor
   );
+  if (themeColor.value === "#16856d")
+    themeColor.value = defaultSettings.themeColor;
   // 主题：light-亮色(默认) dark-暗色
   const theme = useStorage<string>("theme", defaultSettings.theme);
   // 是否开启水印

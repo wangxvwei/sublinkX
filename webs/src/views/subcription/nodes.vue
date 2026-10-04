@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import {
   Check,
   Close,
@@ -106,25 +106,16 @@ const ALL_GROUP_NAME = "全部";
 
 const route = useRoute();
 const router = useRouter();
-const sourceMode = computed(() =>
-  route.meta.workspaceView === "ssh" ? "password" : "apiToken"
-);
 const activePanel = computed(() =>
   route.meta.workspaceView === "nodes" ? "nodes" : "sources"
 );
 const pageTitle = computed(() =>
-  activePanel.value === "nodes"
-    ? "节点库"
-    : sourceMode.value === "apiToken"
-      ? "API 面板接入"
-      : "SSH / VPS 接入"
+  activePanel.value === "nodes" ? "节点库" : "来源接入"
 );
 const pageDescription = computed(() =>
   activePanel.value === "nodes"
     ? "把手动节点和来源同步的节点整理到一起，再用于创建订阅。"
-    : sourceMode.value === "apiToken"
-      ? "通过面板地址与 API Token 接入远端 3x-ui，管理和同步它的节点。"
-      : "通过 SSH 读取远端 x-ui 数据库，适合没有 API 接口的 VPS。"
+    : "统一管理远端面板和 VPS，通过 API 或 SSH 将节点同步到节点库。"
 );
 const activeGroup = ref(ALL_GROUP_NAME);
 const nodeKeyword = ref("");
@@ -175,19 +166,15 @@ const visibleNodes = computed(() => {
 
 const sourceRows = computed(() => {
   const keyword = sourceKeyword.value.trim().toLowerCase();
-  const items = sources.value.filter(
-    (source) =>
-      (source.authType === "apiToken" ? "apiToken" : "password") ===
-      sourceMode.value
-  );
-  if (!keyword) return items;
-  return items.filter((source) =>
+  if (!keyword) return sources.value;
+  return sources.value.filter((source) =>
     [
       source.name,
       source.host,
       source.panelBaseUrl,
       source.groupName,
       source.lastSyncMessage,
+      source.authType === "apiToken" ? "API" : "SSH",
     ]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(keyword))
@@ -205,20 +192,12 @@ const nodeStats = computed(() => {
 });
 
 const sourceStats = computed(() => {
-  const items =
-    activePanel.value === "nodes"
-      ? sources.value
-      : sources.value.filter(
-          (source) =>
-            (source.authType === "apiToken" ? "apiToken" : "password") ===
-            sourceMode.value
-        );
-  const enabled = items.filter((source) => source.enabled).length;
-  const failed = items.filter(
+  const enabled = sources.value.filter((source) => source.enabled).length;
+  const failed = sources.value.filter(
     (source) => source.lastSyncStatus === "failed"
   ).length;
   return {
-    total: items.length,
+    total: sources.value.length,
     enabled,
     failed,
   };
@@ -236,20 +215,6 @@ onMounted(async () => {
 onUnmounted(() => {
   clearSyncResultTimer();
 });
-
-watch(
-  () => sourceForm.value.authType,
-  (authType) => {
-    if (authType === "password") {
-      sourceForm.value.panelBaseUrl = "";
-      sourceForm.value.apiToken = "";
-    } else {
-      sourceForm.value.host = "";
-      sourceForm.value.username = "";
-      sourceForm.value.password = "";
-    }
-  }
-);
 
 async function loadAll() {
   await Promise.all([loadNodes(), loadGroups(), loadSources()]);
@@ -292,7 +257,7 @@ function createEmptySource(): XUISource {
     host: "",
     sshPort: 22,
     username: "root",
-    authType: sourceMode.value,
+    authType: "apiToken",
     password: "",
     panelBaseUrl: "",
     apiToken: "",
@@ -553,12 +518,10 @@ function validateSource() {
   if (form.authType === "password") {
     if (!form.host.trim()) return "请输入 SSH 主机";
     if (!form.username.trim()) return "请输入 SSH 用户名";
-    if (!editingSourceId.value && !form.password?.trim())
-      return "请输入 SSH 密码";
+    if (!form.hasPassword && !form.password?.trim()) return "请输入 SSH 密码";
   } else {
     if (!form.panelBaseUrl?.trim()) return "请输入面板地址";
-    if (!editingSourceId.value && !form.apiToken?.trim())
-      return "请输入 API Token";
+    if (!form.hasApiToken && !form.apiToken?.trim()) return "请输入 API Token";
   }
   return "";
 }
@@ -629,6 +592,11 @@ async function syncOneSource(row: XUISource) {
     const sourceId = savedSource?.id || row.id || editingSourceId.value;
     if (!sourceId) throw new Error("保存来源后未返回来源 ID");
     editingSourceId.value = sourceId;
+    sourceForm.value = {
+      ...sourceForm.value,
+      ...savedSource,
+      password: "",
+    };
 
     const { data } = await SyncXUISource(sourceId);
     showSyncResult(data || null);
@@ -821,7 +789,7 @@ function formatSyncResult(result?: SyncResult) {
   <div class="node-page" :class="{ 'sources-page': activePanel === 'sources' }">
     <div class="node-toolbar">
       <div>
-        <span class="page-kicker">RESOURCE CENTER / 资源中心</span>
+        <span class="page-kicker">资源中心</span>
         <h2>{{ pageTitle }}</h2>
         <p>{{ pageDescription }}</p>
       </div>
@@ -841,10 +809,9 @@ function formatSyncResult(result?: SyncResult) {
           >导入节点</el-button
         >
         <el-button
-          type="success"
           :icon="Connection"
           v-if="activePanel === 'nodes'"
-          @click="router.push('/resources/sources/api')"
+          @click="router.push('/resources/sources')"
         >
           接入来源
         </el-button>
@@ -991,30 +958,12 @@ function formatSyncResult(result?: SyncResult) {
       </section>
     </template>
     <template v-else>
-      <div class="source-mode-nav">
-        <router-link
-          to="/resources/sources/api"
-          :class="{ active: sourceMode === 'apiToken' }"
-          >API 面板</router-link
-        >
-        <router-link
-          to="/resources/sources/ssh"
-          :class="{ active: sourceMode === 'password' }"
-          >SSH / VPS</router-link
-        >
-        <span
-          >同步后，节点会进入<router-link to="/subcription/nodes"
-            >节点库 ↗</router-link
-          ></span
-        >
-      </div>
-
       <section class="source-layout">
         <div class="source-list">
           <div class="panel-head compact">
             <div>
               <h3>
-                {{ sourceMode === "apiToken" ? "API 来源" : "SSH 来源" }}
+                全部来源
                 <small>{{ sourceStats.total }}</small>
               </h3>
               <p>
@@ -1023,12 +972,11 @@ function formatSyncResult(result?: SyncResult) {
               </p>
             </div>
             <el-button
-              type="primary"
               :icon="Refresh"
               :loading="syncingAllSources"
               @click="syncAllSources"
             >
-              同步全部启用来源
+              同步全部
             </el-button>
           </div>
           <el-input
@@ -1048,10 +996,11 @@ function formatSyncResult(result?: SyncResult) {
                 disabled: !source.enabled,
               }"
               type="button"
+              :aria-pressed="editingSourceId === source.id"
               @click="editSource(source)"
             >
               <span class="source-card-title">
-                {{ source.name }}
+                <span>{{ source.name }}</span>
                 <el-tag
                   size="small"
                   :type="source.enabled ? 'success' : 'info'"
@@ -1073,7 +1022,11 @@ function formatSyncResult(result?: SyncResult) {
             </button>
             <el-empty
               v-if="sourceRows.length === 0"
-              description="暂无来源"
+              :description="
+                sourceKeyword
+                  ? '没有匹配的来源'
+                  : '还没有来源，请添加第一个来源'
+              "
               :image-size="80"
             />
           </div>
@@ -1082,12 +1035,12 @@ function formatSyncResult(result?: SyncResult) {
         <div class="source-editor">
           <div class="panel-head compact">
             <div>
-              <h3>{{ editingSourceId ? "编辑节点来源" : "添加节点来源" }}</h3>
-              <p>连接远端 3x-ui 面板，把它的节点导入当前节点池。</p>
+              <h3>{{ editingSourceId ? "编辑来源" : "添加来源" }}</h3>
+              <p>选择接入方式，填写连接信息后保存并同步。</p>
             </div>
             <div class="source-head-actions">
               <el-button :icon="Plus" @click="beginCreateSource"
-                >新来源</el-button
+                >添加来源</el-button
               >
             </div>
           </div>
@@ -1111,6 +1064,15 @@ function formatSyncResult(result?: SyncResult) {
               </el-form-item>
             </div>
 
+            <el-form-item label="接入方式" class="source-auth-field">
+              <el-radio-group
+                v-model="sourceForm.authType"
+                aria-label="接入方式"
+              >
+                <el-radio-button label="apiToken">API Token</el-radio-button>
+                <el-radio-button label="password">SSH 密码</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
             <p class="connection-guide">
               {{
                 sourceForm.authType === "apiToken"
@@ -1143,13 +1105,24 @@ function formatSyncResult(result?: SyncResult) {
                 <el-input v-model="sourceForm.username" placeholder="root" />
                 <p class="field-help">填写 VPS 系统用户，例如 root。</p>
               </el-form-item>
-              <el-form-item label="密码">
+              <el-form-item label="密码" :required="!sourceForm.hasPassword">
                 <el-input
                   v-model="sourceForm.password"
                   type="password"
                   show-password
-                  placeholder="编辑时留空保留原密码"
+                  :placeholder="
+                    sourceForm.hasPassword
+                      ? '留空保留已保存密码'
+                      : '请输入 SSH 密码'
+                  "
                 />
+                <p class="field-help">
+                  {{
+                    sourceForm.hasPassword
+                      ? "已保存 SSH 密码，填写新值可替换。"
+                      : "尚未保存 SSH 密码，首次使用或从 API 切换时需填写。"
+                  }}
+                </p>
               </el-form-item>
             </div>
 
@@ -1164,14 +1137,25 @@ function formatSyncResult(result?: SyncResult) {
                   /panel/api/inbounds/list，程序会自动拼接。
                 </p>
               </el-form-item>
-              <el-form-item label="API Token">
+              <el-form-item
+                label="API Token"
+                :required="!sourceForm.hasApiToken"
+              >
                 <el-input
                   v-model="sourceForm.apiToken"
-                  placeholder="保存后显示当前 Token"
+                  :placeholder="
+                    sourceForm.hasApiToken
+                      ? '留空保留已保存 Token'
+                      : '请输入 API Token'
+                  "
                 />
                 <p class="field-help">
-                  从 3x-ui 面板的 API
-                  设置复制。保存后显示当前值；编辑时留空可保留原 Token。
+                  从 3x-ui 面板的 API 设置复制，保存后显示当前值。
+                  {{
+                    sourceForm.hasApiToken
+                      ? "留空可保留已保存 Token。"
+                      : "首次使用或从 SSH 切换时需填写。"
+                  }}
                 </p>
               </el-form-item>
             </div>
@@ -1427,10 +1411,13 @@ function formatSyncResult(result?: SyncResult) {
             </div>
           </el-form>
 
-          <div v-if="sourceMode === 'password'" class="local-sync">
+          <div class="local-sync">
             <div>
               <strong>本机 x-ui 数据库同步</strong>
-              <span>保留旧入口，适合应用和 x-ui 在同一台机器时使用。</span>
+              <span
+                >仅适用于 sublinkX 和 x-ui
+                位于同一台机器，且已配置数据库路径。</span
+              >
             </div>
             <el-button
               :loading="syncingLocalXUI"
@@ -1510,13 +1497,7 @@ function formatSyncResult(result?: SyncResult) {
   min-height: 100%;
   padding: 20px;
   color: var(--sx-text);
-  background:
-    linear-gradient(
-      180deg,
-      rgba(239, 246, 255, 0.9),
-      rgba(248, 250, 252, 0.4) 260px
-    ),
-    #f6f8fb;
+  background: var(--sx-page);
 }
 
 .node-toolbar,
@@ -1525,9 +1506,8 @@ function formatSyncResult(result?: SyncResult) {
 .source-list,
 .source-editor {
   border: 1px solid var(--sx-border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  border-radius: var(--sx-radius);
+  background: var(--sx-surface);
 }
 
 .node-toolbar {
@@ -1585,22 +1565,7 @@ function formatSyncResult(result?: SyncResult) {
   inset: 0 auto 0 0;
   width: 4px;
   content: "";
-}
-
-.summary-item:nth-child(1)::before {
-  background: #2563eb;
-}
-
-.summary-item:nth-child(2)::before {
-  background: #059669;
-}
-
-.summary-item:nth-child(3)::before {
-  background: #d97706;
-}
-
-.summary-item:nth-child(4)::before {
-  background: #e11d48;
+  background: var(--el-color-primary);
 }
 
 .summary-item span {
@@ -1612,16 +1577,6 @@ function formatSyncResult(result?: SyncResult) {
   color: var(--sx-text);
   font-size: 30px;
   line-height: 1;
-}
-
-.workspace-tabs {
-  margin-top: 8px;
-}
-
-.tab-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .workspace-panel,
@@ -1700,8 +1655,28 @@ function formatSyncResult(result?: SyncResult) {
 
 .source-layout {
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  align-items: start;
+  gap: 20px;
+}
+
+.source-list .panel-head {
+  flex-wrap: wrap;
+}
+
+.source-list h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.source-list h3 small {
+  padding: 2px 7px;
+  border-radius: 5px;
+  color: var(--sx-muted);
+  background: var(--sx-page);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .source-search {
@@ -1710,7 +1685,8 @@ function formatSyncResult(result?: SyncResult) {
 
 .source-cards {
   display: grid;
-  gap: 10px;
+  align-content: start;
+  gap: 8px;
   min-height: 220px;
 }
 
@@ -1721,20 +1697,29 @@ function formatSyncResult(result?: SyncResult) {
   padding: 14px;
   text-align: left;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.9);
+  color: var(--sx-text);
+  font: inherit;
+  background: var(--sx-surface);
   border: 1px solid var(--sx-border);
   border-radius: 8px;
   transition:
     border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    transform 0.16s ease;
+    background-color 0.16s ease;
 }
 
-.source-card:hover,
+.source-card:hover {
+  border-color: var(--el-color-primary);
+  background: var(--sx-page);
+}
+
 .source-card.active {
   border-color: var(--el-color-primary);
-  box-shadow: none;
-  transform: none;
+  background: var(--sx-accent-soft);
+}
+
+.source-card:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
 }
 
 .source-card.disabled {
@@ -1750,8 +1735,18 @@ function formatSyncResult(result?: SyncResult) {
 }
 
 .source-card-title {
-  font-weight: 500;
+  font-weight: 600;
   font-size: 14px;
+}
+
+.source-card-title > span:first-child,
+.source-card-address {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.source-card-title :deep(.el-tag) {
+  flex-shrink: 0;
 }
 
 .source-card-address,
@@ -1761,13 +1756,21 @@ function formatSyncResult(result?: SyncResult) {
 }
 
 .source-form {
-  margin-top: 6px;
+  margin-top: 20px;
+}
+
+.source-auth-field :deep(.el-form-item__content) {
+  line-height: normal;
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.source-identity {
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.55fr);
 }
 
 .ssh-grid {
@@ -1800,7 +1803,7 @@ function formatSyncResult(result?: SyncResult) {
   padding: 16px;
   color: var(--sx-muted);
   background: var(--sx-page);
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--sx-border);
   border-radius: 8px;
 }
 
@@ -1809,7 +1812,7 @@ function formatSyncResult(result?: SyncResult) {
   margin-bottom: 12px;
   border: 1px solid var(--sx-border);
   border-radius: 8px;
-  background: rgba(248, 250, 252, 0.72);
+  background: var(--sx-page);
 }
 
 .rewrite-rule-title {
@@ -1830,7 +1833,7 @@ function formatSyncResult(result?: SyncResult) {
   margin: 0 0 20px;
   border-radius: 8px;
   color: var(--sx-muted);
-  background: var(--sx-accent-soft);
+  background: var(--sx-page);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -1854,42 +1857,12 @@ function formatSyncResult(result?: SyncResult) {
 
 .local-sync span {
   color: var(--sx-muted);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .sync-result {
   margin-top: 12px;
-}
-
-:deep(.el-tabs__header) {
-  margin-bottom: 12px;
-}
-
-:deep(.el-tabs__nav-wrap::after) {
-  display: none;
-}
-
-:deep(.el-tabs__nav) {
-  gap: 8px;
-}
-
-:deep(.el-tabs__item) {
-  height: 40px;
-  padding: 0 16px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: var(--sx-muted);
-  line-height: 40px;
-}
-
-:deep(.el-tabs__item.is-active) {
-  border-color: #dbeafe;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
-  color: #2563eb;
-}
-
-:deep(.el-tabs__active-bar) {
-  display: none;
 }
 
 :deep(.el-collapse) {
@@ -1914,11 +1887,6 @@ function formatSyncResult(result?: SyncResult) {
 
 :deep(.el-form-item) {
   margin-bottom: 16px;
-}
-
-:deep(.el-segmented) {
-  --el-segmented-item-selected-bg-color: var(--el-color-primary);
-  --el-segmented-item-selected-color: #fff;
 }
 
 @media (max-width: 1180px) {

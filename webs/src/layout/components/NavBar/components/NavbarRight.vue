@@ -99,7 +99,7 @@ function logout() {
   place-items: center;
   border: 1px solid var(--sx-border);
   border-radius: 50%;
-  color: #28735d;
+  color: var(--el-color-primary);
   background: var(--sx-accent-soft);
   font-size: 13px;
   font-weight: 600;

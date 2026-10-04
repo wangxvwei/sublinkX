@@ -13,7 +13,7 @@
   @apply flex-x-between;
 
   height: $navbar-height;
-  background: var(--sx-page);
+  background: var(--sx-surface);
   border-bottom: 1px solid var(--sx-border);
   padding-right: 20px;
 }

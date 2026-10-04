@@ -16,7 +16,7 @@ const defaultSettings: AppSettings = {
   theme: ThemeEnum.LIGHT,
   size: SizeEnum.DEFAULT,
   language: LanguageEnum.ZH_CN,
-  themeColor: "#16856d",
+  themeColor: "#4f6bed",
   watermarkEnabled: false,
   watermarkContent: pkg.name,
 };

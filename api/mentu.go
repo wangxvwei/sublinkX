@@ -39,10 +39,9 @@ func workspaceMenus() []Menu {
 			Meta: Meta{Title: "资源中心", Icon: "publish", Roles: roles, AlwaysShow: true},
 			Children: []Child{
 				{Path: "/subcription/nodes", Component: "subcription/nodes", Name: "Nodes", Meta: Meta{Title: "节点库", Icon: "link", Roles: roles, WorkspaceView: "nodes"}},
-				{Path: "sources", Component: "RouteView", Name: "Sources", Redirect: "/resources/sources/api", Meta: Meta{Title: "来源接入", Icon: "client", Roles: roles, AlwaysShow: true}, Children: []Child{
-					{Path: "api", Component: "subcription/nodes", Name: "APISources", Meta: Meta{Title: "API 面板", Icon: "client", Roles: roles, WorkspaceView: "api"}},
-					{Path: "ssh", Component: "subcription/nodes", Name: "SSHSources", Meta: Meta{Title: "SSH / VPS", Icon: "system", Roles: roles, WorkspaceView: "ssh"}},
-				}},
+				{Path: "sources", Component: "subcription/nodes", Name: "Sources", Meta: Meta{Title: "来源接入", Icon: "client", Roles: roles, WorkspaceView: "sources"}},
+				{Path: "sources/api", Component: "subcription/nodes", Name: "LegacyAPISources", Redirect: "/resources/sources", Meta: Meta{Hidden: true, Roles: roles}},
+				{Path: "sources/ssh", Component: "subcription/nodes", Name: "LegacySSHSources", Redirect: "/resources/sources", Meta: Meta{Hidden: true, Roles: roles}},
 			},
 		},
 		{

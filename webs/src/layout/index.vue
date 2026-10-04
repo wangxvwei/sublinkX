@@ -131,8 +131,8 @@ function toggleSidebar() {
   width: $sidebar-width;
   height: 100%;
   overflow: hidden;
-  border-right: 1px solid #25483e;
-  background: #12382e;
+  border-right: 1px solid var(--sx-border);
+  background: var(--sx-surface);
   transition: width 0.28s;
 
   :deep(.el-menu) {
@@ -149,15 +149,15 @@ function toggleSidebar() {
 
     :deep(.el-menu-item),
     :deep(.el-sub-menu__title) {
-      height: 46px;
-      margin: 4px 14px;
+      height: 42px;
+      margin: 3px 12px;
       padding-right: 14px;
       border: 1px solid transparent;
       border-radius: 8px;
-      color: #b2c9c0 !important;
+      color: var(--sx-muted) !important;
       font-size: 14px;
       font-weight: 400;
-      line-height: 46px;
+      line-height: 42px;
       transition:
         color 0.18s ease,
         background-color 0.18s ease,
@@ -169,34 +169,34 @@ function toggleSidebar() {
     :deep(.el-menu-item:hover),
     :deep(.el-sub-menu__title:hover) {
       border-color: transparent;
-      background: #204c3f !important;
-      color: #f0faf4 !important;
+      background: var(--sx-page) !important;
+      color: var(--sx-text) !important;
     }
 
     :deep(.el-menu-item.is-active) {
       border-color: transparent;
-      background: #c2edcf !important;
-      color: #143b2f !important;
+      background: var(--sx-accent-soft) !important;
+      color: var(--el-color-primary) !important;
       font-weight: 500;
     }
 
     :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
-      color: #c2edcf !important;
+      color: var(--sx-text) !important;
       font-weight: 500;
     }
 
     :deep(.el-sub-menu .el-menu) {
-      margin: 2px 6px 8px;
-      padding: 4px 0;
+      margin: 0 6px 12px;
+      padding: 0;
       border: none;
       border-radius: 8px;
       background: transparent !important;
     }
 
     :deep(.el-sub-menu .el-menu-item) {
-      height: 40px;
-      margin: 4px 8px;
-      line-height: 40px;
+      height: 38px;
+      margin: 2px 6px;
+      line-height: 38px;
     }
     :deep(.el-sub-menu .el-sub-menu__title) {
       height: 40px;

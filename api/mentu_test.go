@@ -31,11 +31,13 @@ func TestWorkspaceMenuHierarchy(t *testing.T) {
 	for _, menu := range menus {
 		walk(menu.Path, menu.Children)
 	}
-	if paths["/resources/sources"].Component != "RouteView" || len(paths["/resources/sources"].Children) != 2 {
-		t.Fatal("source modes need a real nested route group")
+	if source := paths["/resources/sources"]; source.Component != "subcription/nodes" || source.Meta.WorkspaceView != "sources" || source.Meta.Hidden || len(source.Children) != 0 {
+		t.Fatal("all source modes must share one visible source page")
 	}
-	if paths["/resources/sources/api"].Meta.WorkspaceView != "api" || paths["/resources/sources/ssh"].Meta.WorkspaceView != "ssh" {
-		t.Fatal("API and SSH source pages are not separated")
+	for _, legacyPath := range []string{"/resources/sources/api", "/resources/sources/ssh"} {
+		if legacy := paths[legacyPath]; legacy.Redirect != "/resources/sources" || !legacy.Meta.Hidden {
+			t.Fatalf("legacy source URL must redirect without another visible menu: %s", legacyPath)
+		}
 	}
 	if paths["/subcription/nodes"].Meta.WorkspaceView != "nodes" {
 		t.Fatal("legacy node URL must still open the node library")

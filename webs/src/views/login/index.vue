@@ -1,112 +1,110 @@
 <template>
   <div class="login-container">
-    <!-- 顶部 -->
-    <div class="absolute-lt flex-x-end p-3 w-full">
-      <el-switch
-        v-model="isDark"
-        inline-prompt
-        :active-icon="Moon"
-        :inactive-icon="Sunny"
-        @change="toggleTheme"
-      />
-      <lang-select class="ml-2 cursor-pointer" />
-    </div>
-    <!-- 登录表单 -->
-    <aside class="login-brand">
-      <span class="login-wordmark"
-        >sublinkX <small>SUBSCRIPTION STUDIO</small></span
-      ><span class="login-kicker">YOUR NETWORK, ORGANIZED.</span>
-      <h1>节点有序。<br />订阅，自由。</h1>
-      <p>从服务器接入到客户端输出，<br />一个工作空间，管理你的全部订阅。</p>
-      <div class="login-flow">
-        <span>01 / 接入来源</span><span>02 / 整理节点</span
-        ><span>03 / 分发订阅</span>
+    <header class="login-header">
+      <div class="login-wordmark">
+        <span class="login-mark"
+          ><el-icon><Connection /></el-icon></span
+        >sublinkX
       </div>
-    </aside>
-    <el-card class="login-card" shadow="never">
-      <div class="text-center relative">
-        <h2>欢迎回来</h2>
-        <p class="login-subtitle">登录你的 sublinkX 工作空间</p>
-        <el-tag class="ml-2 absolute-rt">{{ version }}</el-tag>
+      <div class="login-preferences">
+        <el-switch
+          v-model="isDark"
+          inline-prompt
+          :active-icon="Moon"
+          :inactive-icon="Sunny"
+          aria-label="切换深色主题"
+          @change="toggleTheme"
+        />
+        <lang-select class="cursor-pointer" />
       </div>
+    </header>
+    <main class="login-main">
+      <section class="login-card" aria-labelledby="login-title">
+        <div class="login-intro">
+          <h1 id="login-title">登录工作空间</h1>
+          <p>管理你的来源、节点与订阅。</p>
+        </div>
 
-      <el-form
-        ref="loginFormRef"
-        :model="loginData"
-        :rules="loginRules"
-        class="login-form"
-      >
-        <!-- 用户名 -->
-        <el-form-item prop="username">
-          <div class="flex-y-center w-full">
-            <svg-icon icon-class="user" class="mx-2" />
+        <el-form
+          ref="loginFormRef"
+          :model="loginData"
+          :rules="loginRules"
+          class="login-form"
+          label-position="top"
+          @submit.prevent
+        >
+          <!-- 用户名 -->
+          <el-form-item prop="username" :label="$t('login.username')">
             <el-input
               ref="username"
               v-model="loginData.username"
               :placeholder="$t('login.username')"
               name="username"
+              autocomplete="username"
               size="large"
-              class="h-[48px]"
             />
-          </div>
-        </el-form-item>
+          </el-form-item>
 
-        <!-- 密码 -->
-        <el-tooltip
-          :visible="isCapslock"
-          :content="$t('login.capsLock')"
-          placement="right"
-        >
-          <el-form-item prop="password">
-            <div class="flex-y-center w-full">
-              <svg-icon icon-class="lock" class="mx-2" />
+          <!-- 密码 -->
+          <el-tooltip
+            :visible="isCapslock"
+            :content="$t('login.capsLock')"
+            placement="right"
+          >
+            <el-form-item prop="password" :label="$t('login.password')">
               <el-input
                 v-model="loginData.password"
                 :placeholder="$t('login.password')"
                 type="password"
                 name="password"
+                autocomplete="current-password"
                 @keyup="checkCapslock"
                 @keyup.enter="handleLogin"
                 size="large"
-                class="h-[48px] pr-2"
                 show-password
               />
+            </el-form-item>
+          </el-tooltip>
+
+          <!-- 验证码 -->
+          <el-form-item prop="captchaCode" :label="$t('login.captchaCode')">
+            <div class="captcha-row">
+              <el-input
+                v-model="loginData.captchaCode"
+                auto-complete="off"
+                size="large"
+                :placeholder="$t('login.captchaCode')"
+                @keyup.enter="handleLogin"
+              />
+
+              <button
+                type="button"
+                class="captcha-button"
+                title="点击刷新验证码"
+                aria-label="刷新验证码"
+                @click="getCaptcha"
+              >
+                <el-image :src="captchaBase64" alt="验证码" fit="contain" />
+              </button>
             </div>
           </el-form-item>
-        </el-tooltip>
 
-        <!-- 验证码 -->
-        <el-form-item prop="captchaCode">
-          <div class="flex-y-center w-full">
-            <svg-icon icon-class="captcha" class="mx-2" />
-            <el-input
-              v-model="loginData.captchaCode"
-              auto-complete="off"
-              size="large"
-              class="flex-1"
-              :placeholder="$t('login.captchaCode')"
-              @keyup.enter="handleLogin"
-            />
-
-            <el-image
-              @click="getCaptcha"
-              :src="captchaBase64"
-              class="rounded-tr-md rounded-br-md cursor-pointer h-[48px]"
-            />
-          </div>
-        </el-form-item>
-
-        <!-- 登录按钮 -->
-        <el-button
-          :loading="loading"
-          type="primary"
-          size="large"
-          class="w-full"
-          @click.prevent="handleLogin"
-          >{{ $t("login.login") }}
-        </el-button>
-      </el-form>
-    </el-card>
+          <!-- 登录按钮 -->
+          <el-button
+            :loading="loading"
+            type="primary"
+            size="large"
+            class="login-submit"
+            @click.prevent="handleLogin"
+            >{{ $t("login.login") }}
+          </el-button>
+        </el-form>
+        <p class="captcha-help">看不清验证码？点击图片换一张。</p>
+      </section>
+    </main>
+    <footer class="login-footer">
+      sublinkX <span>{{ version }}</span>
+    </footer>
   </div>
 </template>
 
@@ -114,10 +112,9 @@
 import { useSettingsStore, useUserStore } from "@/store";
 import { getCaptchaApi, GetVersion } from "@/api/auth";
 import { LoginData } from "@/api/auth/types";
-import { Sunny, Moon } from "@element-plus/icons-vue";
+import { Sunny, Moon, Connection } from "@element-plus/icons-vue";
 import { LocationQuery, LocationQueryValue, useRoute } from "vue-router";
 import router from "@/router";
-import defaultSettings from "@/settings";
 import { ThemeEnum } from "@/enums/ThemeEnum";
 // 获取版本号
 const version = ref("");
@@ -141,12 +138,10 @@ const { t } = useI18n();
 
 // Reactive states
 const isDark = ref(settingsStore.theme === ThemeEnum.DARK);
-const icpVisible = ref(true);
 const loading = ref(false); // 按钮loading
 const isCapslock = ref(false); // 是否大写锁定
 const captchaBase64 = ref(); // 验证码图片Base64字符串
 const loginFormRef = ref(ElForm); // 登录表单ref
-const { height } = useWindowSize();
 
 const loginData = ref<LoginData>({
   username: "",
@@ -239,18 +234,6 @@ const toggleTheme = () => {
   settingsStore.changeTheme(newTheme);
 };
 /**
- * 根据屏幕宽度切换设备模式
- */
-
-watchEffect(() => {
-  if (height.value < 600) {
-    icpVisible.value = false;
-  } else {
-    icpVisible.value = true;
-  }
-});
-
-/**
  * 检查输入大小写
  */
 function checkCapslock(event: KeyboardEvent) {
@@ -268,126 +251,154 @@ onMounted(() => {
 <style lang="scss" scoped>
 .login-container {
   display: grid;
-  grid-template-columns: 1.1fr 1fr;
+  grid-template-rows: auto 1fr auto;
   min-height: 100vh;
-  overflow-y: auto;
+  min-height: 100dvh;
   background: var(--sx-page);
-
-  .login-form {
-    padding: 30px 10px;
-  }
+  color: var(--sx-text);
 }
-.login-brand {
+.login-header {
   display: flex;
-  flex-direction: column;
-  align-self: stretch;
-  justify-content: center;
-  padding: clamp(40px, 7vw, 110px);
-  color: #f3f8ee;
-  background:
-    radial-gradient(ellipse at 70% 90%, #356e4c, transparent 65%), #12382e;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px 32px;
 }
 .login-wordmark {
-  margin-bottom: 80px;
-  font-size: 30px;
-  font-weight: 650;
-}
-.login-wordmark small {
-  display: block;
-  color: #9abcae;
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 3px;
-}
-.login-kicker {
-  color: #bcdfc8;
-  font-size: 11px;
-  letter-spacing: 2px;
-}
-.login-brand h1 {
-  margin: 20px 0;
-  font-size: clamp(40px, 4.5vw, 70px);
-  font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -2px;
-}
-.login-brand p {
-  color: #adcbba;
-  font-size: 16px;
-  line-height: 1.9;
-}
-.login-flow {
   display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-  margin-top: 50px;
-  color: #afcdbd;
-  font-size: 12px;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.5px;
+}
+.login-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--el-color-primary);
+  color: white;
+  font-size: 20px;
+}
+.login-preferences {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.login-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px 64px;
 }
 .login-card {
-  justify-self: center;
-  align-self: center;
-  width: min(440px, calc(100% - 40px));
-  border: 0;
-  border-radius: 20px;
+  width: min(420px, 100%);
+  padding: 36px;
+  border: 1px solid var(--sx-border);
+  border-radius: 12px;
   background: var(--sx-surface);
-  padding: 20px;
+  box-shadow: 0 8px 32px rgb(15 23 42 / 3%);
 }
-.login-card h2 {
-  text-align: left;
-  font-size: 27px;
+.login-intro {
+  margin-bottom: 28px;
+}
+.login-intro h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
   font-weight: 600;
-  margin-bottom: 6px;
+  letter-spacing: -0.5px;
 }
-.login-subtitle {
-  text-align: left;
+.login-intro p {
+  margin: 0;
   color: var(--sx-muted);
-  font-size: 13px;
+  font-size: 14px;
 }
-@media (max-width: 760px) {
-  .login-container {
-    grid-template-columns: 1fr;
+.login-form {
+  :deep(.el-form-item) {
+    margin-bottom: 22px;
   }
-  .login-brand {
-    padding: 32px 24px;
+  :deep(.el-form-item__label) {
+    color: var(--sx-text);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 0;
+    margin-bottom: 8px;
+    line-height: 20px;
   }
-  .login-wordmark {
-    margin-bottom: 24px;
-  }
-  .login-brand h1 {
-    font-size: 32px;
-  }
-  .login-brand p,
-  .login-kicker,
-  .login-flow {
+  :deep(.el-form-item__label::before) {
     display: none;
   }
-  .login-card {
-    margin: 30px 0;
+  :deep(.el-input__wrapper) {
+    min-height: 42px;
+    border-radius: 6px;
   }
 }
-
-.el-form-item {
-  background: var(--el-input-bg-color);
-  border: 1px solid var(--el-border-color);
-  border-radius: 5px;
+.captcha-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
 }
+.captcha-row .el-input {
+  min-width: 0;
+  flex: 1;
+}
+.captcha-button {
+  display: block;
+  padding: 0;
+  width: 120px;
+  height: 42px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid var(--sx-border);
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
 
-:deep(.el-input) {
-  .el-input__wrapper {
-    padding: 0;
-    background-color: transparent;
-    box-shadow: none;
-
-    &.is-focus,
-    &:hover {
-      box-shadow: none !important;
-    }
-
-    input:-webkit-autofill {
-      /* 通过延时渲染背景色变相去除背景颜色 */
-      transition: background-color 1000s ease-in-out 0s;
-    }
+  .el-image {
+    width: 100%;
+    height: 100%;
+  }
+  &:focus-visible {
+    outline: 2px solid var(--el-color-primary);
+    outline-offset: 2px;
+  }
+}
+.login-submit {
+  width: 100%;
+  height: 42px;
+  margin-top: 2px;
+  font-size: 14px;
+}
+.captcha-help {
+  margin: 18px 0 0;
+  color: var(--sx-muted);
+  font-size: 12px;
+  text-align: center;
+}
+.login-footer {
+  padding: 20px;
+  color: var(--sx-muted);
+  font-size: 12px;
+  text-align: center;
+  span {
+    margin-left: 8px;
+  }
+}
+@media (max-width: 480px) {
+  .login-header {
+    padding: 20px;
+  }
+  .login-main {
+    padding: 24px 16px 40px;
+  }
+  .login-card {
+    padding: 28px 24px;
+  }
+  .login-intro h1 {
+    font-size: 22px;
   }
 }
 </style>
