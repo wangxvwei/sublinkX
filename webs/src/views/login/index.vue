@@ -12,9 +12,21 @@
       <lang-select class="ml-2 cursor-pointer" />
     </div>
     <!-- 登录表单 -->
-    <el-card class="!border-none !bg-transparent !rounded-4% w-100 <sm:w-85">
+    <aside class="login-brand">
+      <span class="login-wordmark"
+        >sublinkX <small>SUBSCRIPTION STUDIO</small></span
+      ><span class="login-kicker">YOUR NETWORK, ORGANIZED.</span>
+      <h1>节点有序。<br />订阅，自由。</h1>
+      <p>从服务器接入到客户端输出，<br />一个工作空间，管理你的全部订阅。</p>
+      <div class="login-flow">
+        <span>01 / 接入来源</span><span>02 / 整理节点</span
+        ><span>03 / 分发订阅</span>
+      </div>
+    </aside>
+    <el-card class="login-card" shadow="never">
       <div class="text-center relative">
-        <h2>{{ defaultSettings.title }}</h2>
+        <h2>欢迎回来</h2>
+        <p class="login-subtitle">登录你的 sublinkX 工作空间</p>
         <el-tag class="ml-2 absolute-rt">{{ version }}</el-tag>
       </div>
 
@@ -93,18 +105,14 @@
           @click.prevent="handleLogin"
           >{{ $t("login.login") }}
         </el-button>
-
-      
       </el-form>
     </el-card>
-
-  
   </div>
 </template>
 
 <script setup lang="ts">
 import { useSettingsStore, useUserStore } from "@/store";
-import { getCaptchaApi , GetVersion } from "@/api/auth";
+import { getCaptchaApi, GetVersion } from "@/api/auth";
 import { LoginData } from "@/api/auth/types";
 import { Sunny, Moon } from "@element-plus/icons-vue";
 import { LocationQuery, LocationQueryValue, useRoute } from "vue-router";
@@ -112,17 +120,17 @@ import router from "@/router";
 import defaultSettings from "@/settings";
 import { ThemeEnum } from "@/enums/ThemeEnum";
 // 获取版本号
-const version = ref('')  
-const fetchVersion = function(){
-  GetVersion().then((res) => {
-    console.log("Version fetched:", res.data); // 输出返回内容
-    version.value = res.data;
-  }).catch((error) => {
-    console.error("Error fetching version:", error);
-  });
-}() 
-
-
+const version = ref("");
+const fetchVersion = (function () {
+  GetVersion()
+    .then((res) => {
+      console.log("Version fetched:", res.data); // 输出返回内容
+      version.value = res.data;
+    })
+    .catch((error) => {
+      console.error("Error fetching version:", error);
+    });
+})();
 
 // Stores
 const userStore = useUserStore();
@@ -258,18 +266,104 @@ onMounted(() => {
 </script>
 
 <style lang="scss" scoped>
-html.dark .login-container {
-  background: url("@/assets/images/login-bg-dark.jpg") no-repeat center right;
-}
-
 .login-container {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  min-height: 100vh;
   overflow-y: auto;
-  background: url("@/assets/images/login-bg.jpg") no-repeat center right;
-
-  @apply wh-full flex-center;
+  background: var(--sx-page);
 
   .login-form {
     padding: 30px 10px;
+  }
+}
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  justify-content: center;
+  padding: clamp(40px, 7vw, 110px);
+  color: #f3f8ee;
+  background:
+    radial-gradient(ellipse at 70% 90%, #356e4c, transparent 65%), #12382e;
+}
+.login-wordmark {
+  margin-bottom: 80px;
+  font-size: 30px;
+  font-weight: 650;
+}
+.login-wordmark small {
+  display: block;
+  color: #9abcae;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 3px;
+}
+.login-kicker {
+  color: #bcdfc8;
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+.login-brand h1 {
+  margin: 20px 0;
+  font-size: clamp(40px, 4.5vw, 70px);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -2px;
+}
+.login-brand p {
+  color: #adcbba;
+  font-size: 16px;
+  line-height: 1.9;
+}
+.login-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-top: 50px;
+  color: #afcdbd;
+  font-size: 12px;
+}
+.login-card {
+  justify-self: center;
+  align-self: center;
+  width: min(440px, calc(100% - 40px));
+  border: 0;
+  border-radius: 20px;
+  background: var(--sx-surface);
+  padding: 20px;
+}
+.login-card h2 {
+  text-align: left;
+  font-size: 27px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.login-subtitle {
+  text-align: left;
+  color: var(--sx-muted);
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  .login-container {
+    grid-template-columns: 1fr;
+  }
+  .login-brand {
+    padding: 32px 24px;
+  }
+  .login-wordmark {
+    margin-bottom: 24px;
+  }
+  .login-brand h1 {
+    font-size: 32px;
+  }
+  .login-brand p,
+  .login-kicker,
+  .login-flow {
+    display: none;
+  }
+  .login-card {
+    margin: 30px 0;
   }
 }
 

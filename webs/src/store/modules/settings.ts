@@ -9,7 +9,10 @@ export const useSettingsStore = defineStore("setting", () => {
   // 是否显示设置
   const settingsVisible = ref(false);
   // 是否显示标签视图
-  const tagsView = useStorage<boolean>("tagsView", defaultSettings.tagsView);
+  const tagsView = useStorage<boolean>(
+    "workspaceTagsView",
+    defaultSettings.tagsView
+  );
   // 是否显示侧边栏logo
   const sidebarLogo = useStorage<boolean>(
     "sidebarLogo",
@@ -24,7 +27,7 @@ export const useSettingsStore = defineStore("setting", () => {
   const layout = useStorage<string>("layout", defaultSettings.layout);
   // 主题颜色
   const themeColor = useStorage<string>(
-    "themeColor",
+    "workspaceThemeColor",
     defaultSettings.themeColor
   );
   // 主题：light-亮色(默认) dark-暗色

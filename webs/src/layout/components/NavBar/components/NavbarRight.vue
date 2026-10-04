@@ -1,167 +1,125 @@
 <template>
-  <div class="flex">
-    <template v-if="!isMobile">
-      <!--全屏 -->
-      <div class="setting-item" @click="toggle">
-        <svg-icon
-          :icon-class="isFullscreen ? 'fullscreen-exit' : 'fullscreen'"
-        />
-      </div>
-
-      <!-- 布局大小 -->
-      <el-tooltip
-        :content="$t('sizeSelect.tooltip')"
-        effect="dark"
-        placement="bottom"
-      >
-        <size-select class="setting-item" />
-      </el-tooltip>
-
-      <!-- 语言选择 -->
-      <lang-select class="setting-item" />
-    </template>
-
-    <!-- 用户头像 -->
-    <router-link class="update-shortcut" to="/system/user/set">
-      <el-icon><Refresh /></el-icon>
-      <span>更新</span>
-    </router-link>
-
-    <el-dropdown class="setting-item" trigger="click">
-      <div class="user-trigger">
-        <img
-          :src="userStore.user.avatar + '?imageView2/1/w/80/h/80'"
-          class="rounded-full mr-10px w24px w24px"
-        />
-        <span>{{ userStore.user.username }}</span>
-      </div>
+  <div class="header-tools">
+    <el-tooltip
+      :content="settingStore.theme === 'dark' ? '切换浅色主题' : '切换深色主题'"
+    >
+      <el-button
+        class="theme-toggle"
+        circle
+        :icon="settingStore.theme === 'dark' ? Sunny : Moon"
+        aria-label="切换主题"
+        @click="
+          settingStore.changeTheme(
+            settingStore.theme === 'dark' ? 'light' : 'dark'
+          )
+        "
+      />
+    </el-tooltip>
+    <router-link class="update-shortcut" to="/system/update"
+      ><el-icon><Refresh /></el-icon><span>版本更新</span></router-link
+    >
+    <el-dropdown trigger="click">
+      <button class="user-trigger" type="button">
+        <span class="user-avatar">{{
+          (userStore.user.username || "A").slice(0, 1).toUpperCase()
+        }}</span
+        ><span class="user-name"
+          >{{ userStore.user.username }}<small>管理员</small></span
+        ><el-icon><ArrowDown /></el-icon>
+      </button>
       <template #dropdown>
         <el-dropdown-menu>
-            <router-link to="/system/user/set">
-            <el-dropdown-item>系统设置 / 版本更新</el-dropdown-item>
-            </router-link>
-          <el-dropdown-item divided @click="logout">
-            {{ $t("navbar.logout") }}
-          </el-dropdown-item>
+          <el-dropdown-item @click="router.push('/system/account')"
+            >账号与安全</el-dropdown-item
+          >
+          <el-dropdown-item @click="settingStore.settingsVisible = true"
+            >外观偏好</el-dropdown-item
+          >
+          <el-dropdown-item divided @click="logout">退出登录</el-dropdown-item>
         </el-dropdown-menu>
       </template>
     </el-dropdown>
-
-    <!-- 设置 -->
-    <template v-if="defaultSettings.showSettings">
-      <div class="setting-item" @click="settingStore.settingsVisible = true">
-        <svg-icon icon-class="setting" />
-      </div>
-    </template>
   </div>
 </template>
 <script setup lang="ts">
-import {
-  useAppStore,
-  useTagsViewStore,
-  useUserStore,
-  useSettingsStore,
-} from "@/store";
-import defaultSettings from "@/settings";
-import { DeviceEnum } from "@/enums/DeviceEnum";
-import { Refresh } from "@element-plus/icons-vue";
-
-const appStore = useAppStore();
+import { useTagsViewStore, useUserStore, useSettingsStore } from "@/store";
+import { Refresh, Moon, Sunny, ArrowDown } from "@element-plus/icons-vue";
 const tagsViewStore = useTagsViewStore();
 const userStore = useUserStore();
 const settingStore = useSettingsStore();
-
 const route = useRoute();
 const router = useRouter();
-
-const isMobile = computed(() => appStore.device === DeviceEnum.MOBILE);
-
-const { isFullscreen, toggle } = useFullscreen();
-
-/**
- * 注销
- */
 function logout() {
-  ElMessageBox.confirm("确定注销并退出系统吗？", "提示", {
-    confirmButtonText: "确定",
+  ElMessageBox.confirm("确定退出登录吗？", "退出登录", {
+    confirmButtonText: "退出",
     cancelButtonText: "取消",
     type: "warning",
     lockScroll: false,
-  }).then(() => {
-    userStore
-      .logout()
-      .then(() => {
-        tagsViewStore.delAllViews();
-      })
-      .then(() => {
-        router.push(`/login?redirect=${route.fullPath}`);
-      });
-  });
+  })
+    .then(async () => {
+      await userStore.logout();
+      tagsViewStore.delAllViews();
+      router.push(`/login?redirect=${route.fullPath}`);
+    })
+    .catch(() => {});
 }
 </script>
 <style lang="scss" scoped>
-.setting-item {
-  display: inline-block;
-  min-width: 40px;
-  height: $navbar-height;
-  line-height: $navbar-height;
-  color: #111827;
-  text-align: center;
-  cursor: pointer;
-
-  &:hover {
-    background: #eff6ff;
-  }
-}
-
-.setting-item :deep(.svg-icon),
-.setting-item :deep(.el-icon),
-.setting-item span {
-  color: #111827;
-}
-
-.user-trigger {
+.header-tools {
   display: flex;
   align-items: center;
-  height: 100%;
-  padding: 0 12px;
-  color: #111827;
-  font-weight: 650;
+  gap: 14px;
+  padding-right: 8px;
 }
-
+.theme-toggle {
+  border-color: var(--sx-border);
+  color: var(--sx-muted);
+  background: transparent;
+}
 .update-shortcut {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  color: var(--sx-muted);
+  font-size: 12px;
+}
+.user-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  color: var(--sx-text);
+  background: transparent;
+  cursor: pointer;
+}
+.user-avatar {
+  display: grid;
+  width: 34px;
   height: 34px;
-  padding: 0 12px;
-  margin: 9px 6px 0 2px;
-  color: #1d4ed8;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 34px;
-  text-decoration: none;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  background: #eff6ff;
-  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+  place-items: center;
+  border: 1px solid var(--sx-border);
+  border-radius: 50%;
+  color: #28735d;
+  background: var(--sx-accent-soft);
+  font-size: 13px;
+  font-weight: 600;
 }
-
-.update-shortcut:hover {
-  color: #ffffff;
-  border-color: #2563eb;
-  background: #2563eb;
+.user-name {
+  text-align: left;
+  font-size: 12px;
 }
-
-.dark .setting-item:hover {
-  background: rgb(255 255 255 / 20%);
+.user-name small {
+  display: block;
+  color: var(--sx-muted);
+  font-size: 10px;
 }
-
-.dark .setting-item,
-.dark .setting-item :deep(.svg-icon),
-.dark .setting-item :deep(.el-icon),
-.dark .setting-item span,
-.dark .user-trigger {
-  color: #e5e7eb;
+@media (max-width: 760px) {
+  .header-tools {
+    gap: 9px;
+  }
+  .user-name,
+  .update-shortcut span {
+    display: none;
+  }
 }
 </style>

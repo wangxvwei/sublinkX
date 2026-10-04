@@ -104,7 +104,28 @@ interface SyncResult {
 
 const ALL_GROUP_NAME = "全部";
 
-const activePanel = ref<"nodes" | "sources">("nodes");
+const route = useRoute();
+const router = useRouter();
+const sourceMode = computed(() =>
+  route.meta.workspaceView === "ssh" ? "password" : "apiToken"
+);
+const activePanel = computed(() =>
+  route.meta.workspaceView === "nodes" ? "nodes" : "sources"
+);
+const pageTitle = computed(() =>
+  activePanel.value === "nodes"
+    ? "节点库"
+    : sourceMode.value === "apiToken"
+      ? "API 面板接入"
+      : "SSH / VPS 接入"
+);
+const pageDescription = computed(() =>
+  activePanel.value === "nodes"
+    ? "把手动节点和来源同步的节点整理到一起，再用于创建订阅。"
+    : sourceMode.value === "apiToken"
+      ? "通过面板地址与 API Token 接入远端 3x-ui，管理和同步它的节点。"
+      : "通过 SSH 读取远端 x-ui 数据库，适合没有 API 接口的 VPS。"
+);
 const activeGroup = ref(ALL_GROUP_NAME);
 const nodeKeyword = ref("");
 const sourceKeyword = ref("");
@@ -154,8 +175,13 @@ const visibleNodes = computed(() => {
 
 const sourceRows = computed(() => {
   const keyword = sourceKeyword.value.trim().toLowerCase();
-  if (!keyword) return sources.value;
-  return sources.value.filter((source) =>
+  const items = sources.value.filter(
+    (source) =>
+      (source.authType === "apiToken" ? "apiToken" : "password") ===
+      sourceMode.value
+  );
+  if (!keyword) return items;
+  return items.filter((source) =>
     [
       source.name,
       source.host,
@@ -179,12 +205,20 @@ const nodeStats = computed(() => {
 });
 
 const sourceStats = computed(() => {
-  const enabled = sources.value.filter((source) => source.enabled).length;
-  const failed = sources.value.filter(
+  const items =
+    activePanel.value === "nodes"
+      ? sources.value
+      : sources.value.filter(
+          (source) =>
+            (source.authType === "apiToken" ? "apiToken" : "password") ===
+            sourceMode.value
+        );
+  const enabled = items.filter((source) => source.enabled).length;
+  const failed = items.filter(
     (source) => source.lastSyncStatus === "failed"
   ).length;
   return {
-    total: sources.value.length,
+    total: items.length,
     enabled,
     failed,
   };
@@ -196,6 +230,7 @@ const nodeDialogTitle = computed(() =>
 
 onMounted(async () => {
   await loadAll();
+  beginCreateSource();
 });
 
 onUnmounted(() => {
@@ -257,7 +292,7 @@ function createEmptySource(): XUISource {
     host: "",
     sshPort: 22,
     username: "root",
-    authType: "password",
+    authType: sourceMode.value,
     password: "",
     panelBaseUrl: "",
     apiToken: "",
@@ -783,11 +818,12 @@ function formatSyncResult(result?: SyncResult) {
 </script>
 
 <template>
-  <div class="node-page">
+  <div class="node-page" :class="{ 'sources-page': activePanel === 'sources' }">
     <div class="node-toolbar">
       <div>
-        <h2>节点与来源</h2>
-        <p>管理手动节点和远端 3x-ui / x-ui 来源，同步后会写入同一个节点池。</p>
+        <span class="page-kicker">RESOURCE CENTER / 资源中心</span>
+        <h2>{{ pageTitle }}</h2>
+        <p>{{ pageDescription }}</p>
       </div>
       <div class="toolbar-actions">
         <el-button
@@ -797,20 +833,25 @@ function formatSyncResult(result?: SyncResult) {
         >
           刷新
         </el-button>
-        <el-button type="primary" :icon="Plus" @click="beginCreateNode"
-          >添加节点</el-button
+        <el-button
+          v-if="activePanel === 'nodes'"
+          type="primary"
+          :icon="Plus"
+          @click="beginCreateNode"
+          >导入节点</el-button
         >
         <el-button
           type="success"
           :icon="Connection"
-          @click="activePanel = 'sources'"
+          v-if="activePanel === 'nodes'"
+          @click="router.push('/resources/sources/api')"
         >
-          远端 VPS 导入
+          接入来源
         </el-button>
       </div>
     </div>
 
-    <div class="summary-grid">
+    <div v-if="activePanel === 'nodes'" class="summary-grid">
       <div class="summary-item">
         <span>节点总数</span>
         <strong>{{ nodeStats.total }}</strong>
@@ -829,611 +870,588 @@ function formatSyncResult(result?: SyncResult) {
       </div>
     </div>
 
-    <el-tabs v-model="activePanel" class="workspace-tabs">
-      <el-tab-pane name="nodes">
-        <template #label>
-          <span class="tab-label"
-            ><el-icon><Connection /></el-icon>节点</span
-          >
-        </template>
-
-        <section class="workspace-panel">
-          <div class="panel-head">
-            <div class="group-tabs">
-              <el-button
-                :type="activeGroup === ALL_GROUP_NAME ? 'primary' : 'default'"
-                @click="activeGroup = ALL_GROUP_NAME"
-              >
-                全部 {{ nodes.length }}
-              </el-button>
-              <el-button
-                v-for="group in groupNames"
-                :key="group"
-                :type="activeGroup === group ? 'primary' : 'default'"
-                @click="activeGroup = group"
-              >
-                {{ group }}
-              </el-button>
-            </div>
-            <el-input
-              v-model="nodeKeyword"
-              :prefix-icon="Search"
-              clearable
-              placeholder="搜索名称、链接、来源或 SubID"
-              class="search-input"
-            />
-          </div>
-
-          <div class="batch-bar">
-            <span>已选 {{ nodeStats.selected }} 个</span>
-            <el-button :icon="Check" @click="selectAllRows">全选当前</el-button>
-            <el-button :icon="Close" @click="clearSelection"
-              >取消选择</el-button
+    <template v-if="activePanel === 'nodes'">
+      <section class="workspace-panel">
+        <div class="panel-head">
+          <div class="group-tabs">
+            <el-button
+              :type="activeGroup === ALL_GROUP_NAME ? 'primary' : 'default'"
+              @click="activeGroup = ALL_GROUP_NAME"
             >
+              全部 {{ nodes.length }}
+            </el-button>
+            <el-button
+              v-for="group in groupNames"
+              :key="group"
+              :type="activeGroup === group ? 'primary' : 'default'"
+              @click="activeGroup = group"
+            >
+              {{ group }}
+            </el-button>
+          </div>
+          <el-input
+            v-model="nodeKeyword"
+            :prefix-icon="Search"
+            clearable
+            placeholder="搜索名称、链接、来源或 SubID"
+            class="search-input"
+          />
+        </div>
+
+        <div class="batch-bar">
+          <span>已选 {{ nodeStats.selected }} 个</span>
+          <el-button :icon="Check" @click="selectAllRows">全选当前</el-button>
+          <el-button :icon="Close" @click="clearSelection">取消选择</el-button>
+          <el-button
+            type="primary"
+            :icon="CopyDocument"
+            @click="copySelectedNodes"
+          >
+            复制选中
+          </el-button>
+          <el-button type="danger" :icon="Delete" @click="deleteSelectedNodes">
+            删除选中
+          </el-button>
+        </div>
+
+        <el-table
+          ref="tableRef"
+          v-loading="nodeLoading"
+          :data="visibleNodes"
+          row-key="ID"
+          stripe
+          class="node-table"
+          empty-text="暂无节点"
+          @selection-change="handleSelectionChange"
+        >
+          <el-table-column type="selection" width="46" />
+          <el-table-column label="节点" min-width="230" sortable prop="Name">
+            <template #default="{ row }">
+              <div class="node-name">
+                <span>{{ row.Name }}</span>
+                <el-tag size="small" effect="plain">{{
+                  protocolFromLink(row.Link)
+                }}</el-tag>
+              </div>
+              <div class="node-meta">
+                {{ row.Source || "手动节点" }}
+                <template v-if="row.SubID"> · {{ row.SubID }}</template>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="链接" min-width="360" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="link-text">{{ row.LinkOverride || row.Link }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="分组" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ getGroupText(row) }}
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="创建时间"
+            width="180"
+            sortable
+            prop="CreatedAt"
+          >
+            <template #default="{ row }">
+              {{ formatDate(row.CreatedAt || row.CreateDate) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="176" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                link
+                type="primary"
+                :icon="EditPen"
+                @click="beginEditNode(row)"
+              >
+                编辑
+              </el-button>
+              <el-button
+                link
+                type="primary"
+                :icon="CopyDocument"
+                @click="copyNode(row)"
+              >
+                复制
+              </el-button>
+              <el-button
+                link
+                type="danger"
+                :icon="Delete"
+                @click="deleteNode(row)"
+              >
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
+    </template>
+    <template v-else>
+      <div class="source-mode-nav">
+        <router-link
+          to="/resources/sources/api"
+          :class="{ active: sourceMode === 'apiToken' }"
+          >API 面板</router-link
+        >
+        <router-link
+          to="/resources/sources/ssh"
+          :class="{ active: sourceMode === 'password' }"
+          >SSH / VPS</router-link
+        >
+        <span
+          >同步后，节点会进入<router-link to="/subcription/nodes"
+            >节点库 ↗</router-link
+          ></span
+        >
+      </div>
+
+      <section class="source-layout">
+        <div class="source-list">
+          <div class="panel-head compact">
+            <div>
+              <h3>
+                {{ sourceMode === "apiToken" ? "API 来源" : "SSH 来源" }}
+                <small>{{ sourceStats.total }}</small>
+              </h3>
+              <p>
+                {{ sourceStats.enabled }} 个启用，{{ sourceStats.failed }}
+                个同步失败
+              </p>
+            </div>
             <el-button
               type="primary"
-              :icon="CopyDocument"
-              @click="copySelectedNodes"
+              :icon="Refresh"
+              :loading="syncingAllSources"
+              @click="syncAllSources"
             >
-              复制选中
-            </el-button>
-            <el-button
-              type="danger"
-              :icon="Delete"
-              @click="deleteSelectedNodes"
-            >
-              删除选中
+              同步全部启用来源
             </el-button>
           </div>
-
-          <el-table
-            ref="tableRef"
-            v-loading="nodeLoading"
-            :data="visibleNodes"
-            row-key="ID"
-            stripe
-            class="node-table"
-            empty-text="暂无节点"
-            @selection-change="handleSelectionChange"
-          >
-            <el-table-column type="selection" width="46" />
-            <el-table-column label="节点" min-width="230" sortable prop="Name">
-              <template #default="{ row }">
-                <div class="node-name">
-                  <span>{{ row.Name }}</span>
-                  <el-tag size="small" effect="plain">{{
-                    protocolFromLink(row.Link)
-                  }}</el-tag>
-                </div>
-                <div class="node-meta">
-                  {{ row.Source || "手动节点" }}
-                  <template v-if="row.SubID"> · {{ row.SubID }}</template>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="链接" min-width="360" show-overflow-tooltip>
-              <template #default="{ row }">
-                <span class="link-text">{{
-                  row.LinkOverride || row.Link
-                }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="分组" min-width="160" show-overflow-tooltip>
-              <template #default="{ row }">
-                {{ getGroupText(row) }}
-              </template>
-            </el-table-column>
-            <el-table-column
-              label="创建时间"
-              width="180"
-              sortable
-              prop="CreatedAt"
+          <el-input
+            v-model="sourceKeyword"
+            :prefix-icon="Search"
+            clearable
+            placeholder="搜索来源、地址、分组"
+            class="source-search"
+          />
+          <div v-loading="sourceLoading" class="source-cards">
+            <button
+              v-for="source in sourceRows"
+              :key="source.id"
+              class="source-card"
+              :class="{
+                active: editingSourceId === source.id,
+                disabled: !source.enabled,
+              }"
+              type="button"
+              @click="editSource(source)"
             >
-              <template #default="{ row }">
-                {{ formatDate(row.CreatedAt || row.CreateDate) }}
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="176" fixed="right">
-              <template #default="{ row }">
-                <el-button
-                  link
-                  type="primary"
-                  :icon="EditPen"
-                  @click="beginEditNode(row)"
+              <span class="source-card-title">
+                {{ source.name }}
+                <el-tag
+                  size="small"
+                  :type="source.enabled ? 'success' : 'info'"
                 >
-                  编辑
-                </el-button>
-                <el-button
-                  link
-                  type="primary"
-                  :icon="CopyDocument"
-                  @click="copyNode(row)"
-                >
-                  复制
-                </el-button>
-                <el-button
-                  link
-                  type="danger"
-                  :icon="Delete"
-                  @click="deleteNode(row)"
-                >
-                  删除
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </section>
-      </el-tab-pane>
+                  {{ source.enabled ? "启用" : "停用" }}
+                </el-tag>
+              </span>
+              <span class="source-card-address">{{
+                getSourceAddress(source)
+              }}</span>
+              <span class="source-card-footer">
+                <el-tag size="small" :type="getStatusTag(source)">
+                  {{ getStatusText(source) }}
+                </el-tag>
+                <span>{{
+                  source.authType === "apiToken" ? "API Token" : "SSH 密码"
+                }}</span>
+              </span>
+            </button>
+            <el-empty
+              v-if="sourceRows.length === 0"
+              description="暂无来源"
+              :image-size="80"
+            />
+          </div>
+        </div>
 
-      <el-tab-pane name="sources">
-        <template #label>
-          <span class="tab-label"
-            ><el-icon><Setting /></el-icon>节点来源与同步</span
-          >
-        </template>
+        <div class="source-editor">
+          <div class="panel-head compact">
+            <div>
+              <h3>{{ editingSourceId ? "编辑节点来源" : "添加节点来源" }}</h3>
+              <p>连接远端 3x-ui 面板，把它的节点导入当前节点池。</p>
+            </div>
+            <div class="source-head-actions">
+              <el-button :icon="Plus" @click="beginCreateSource"
+                >新来源</el-button
+              >
+            </div>
+          </div>
 
-        <section class="source-layout">
-          <div class="source-list">
-            <div class="panel-head compact">
-              <div>
-                <h3>远端 VPS</h3>
-                <p>
-                  {{ sourceStats.enabled }} 个启用，{{
-                    sourceStats.failed
-                  }}
-                  个同步失败
+          <el-form :model="sourceForm" label-position="top" class="source-form">
+            <div class="form-grid source-identity">
+              <el-form-item label="来源名称">
+                <el-input
+                  v-model="sourceForm.name"
+                  placeholder="例如：香港 VPS / 洛杉矶 3x-ui"
+                />
+                <p class="field-help">
+                  用于区分不同 VPS，选择订阅节点时也会显示这个名称。
                 </p>
-              </div>
+              </el-form-item>
+              <el-form-item label="启用同步">
+                <el-switch v-model="sourceForm.enabled" />
+                <p class="field-help">
+                  关闭后「同步全部」会跳过此来源，已导入的节点仍保留。
+                </p>
+              </el-form-item>
+            </div>
+
+            <p class="connection-guide">
+              {{
+                sourceForm.authType === "apiToken"
+                  ? "API 方式：填写面板完整地址和 Token，再确认下面的订阅服务器地址。面板和订阅服务可能使用不同端口。"
+                  : "SSH 方式：使用 VPS 的系统账号连接，需要能读取 x-ui 数据库，并且远端已安装 Python 3。面板登录账号不能用于 SSH。"
+              }}
+            </p>
+            <div
+              v-if="sourceForm.authType === 'password'"
+              class="form-grid ssh-grid"
+            >
+              <el-form-item label="SSH 主机">
+                <el-input
+                  v-model="sourceForm.host"
+                  placeholder="1.2.3.4 或 example.com"
+                />
+              </el-form-item>
+              <el-form-item label="SSH 端口">
+                <el-input-number
+                  v-model="sourceForm.sshPort"
+                  :min="1"
+                  :max="65535"
+                  controls-position="right"
+                />
+                <p class="field-help">
+                  VPS 的 SSH 服务端口，通常为 22，与面板端口无关。
+                </p>
+              </el-form-item>
+              <el-form-item label="用户名">
+                <el-input v-model="sourceForm.username" placeholder="root" />
+                <p class="field-help">填写 VPS 系统用户，例如 root。</p>
+              </el-form-item>
+              <el-form-item label="密码">
+                <el-input
+                  v-model="sourceForm.password"
+                  type="password"
+                  show-password
+                  placeholder="编辑时留空保留原密码"
+                />
+              </el-form-item>
+            </div>
+
+            <div v-else class="form-grid api-grid">
+              <el-form-item label="面板基础地址">
+                <el-input
+                  v-model="sourceForm.panelBaseUrl"
+                  placeholder="https://panel.example.com:54321/面板路径"
+                />
+                <p class="field-help">
+                  包含 https://、端口（如有）和面板安全路径；不要包含
+                  /panel/api/inbounds/list，程序会自动拼接。
+                </p>
+              </el-form-item>
+              <el-form-item label="API Token">
+                <el-input
+                  v-model="sourceForm.apiToken"
+                  placeholder="保存后显示当前 Token"
+                />
+                <p class="field-help">
+                  从 3x-ui 面板的 API
+                  设置复制。保存后显示当前值；编辑时留空可保留原 Token。
+                </p>
+              </el-form-item>
+            </div>
+
+            <el-collapse v-model="sourceAdvanced" class="source-collapse">
+              <el-collapse-item
+                title="同步设置 · 订阅服务器与导入方式"
+                name="sync"
+              >
+                <div class="form-grid advanced-grid">
+                  <el-form-item
+                    v-if="sourceForm.authType === 'password'"
+                    label="x-ui 数据库路径"
+                  >
+                    <el-input v-model="sourceForm.xuiDbPath" />
+                    <p class="field-help">
+                      数据库在远端 VPS 上的绝对路径，通常是 /etc/x-ui/x-ui.db。
+                    </p>
+                  </el-form-item>
+                  <el-form-item label="订阅服务器地址">
+                    <el-input
+                      v-model="sourceForm.subBaseUrl"
+                      placeholder="留空时自动探测或保持原地址"
+                    />
+                    <p class="field-help">
+                      只填写协议、域名和端口，例如
+                      https://sub.example.com:2096；不要包含订阅路径和客户端标识。
+                    </p>
+                  </el-form-item>
+                  <el-form-item label="订阅路径">
+                    <el-input
+                      v-model="sourceForm.subPath"
+                      placeholder="例如 dingyue"
+                    />
+                    <p class="field-help">
+                      面板订阅设置中的路径，例如 dingyue。实际请求：服务器地址 /
+                      路径 / 客户端订阅标识。
+                    </p>
+                  </el-form-item>
+                  <el-form-item label="导入分组">
+                    <el-input
+                      v-model="sourceForm.groupName"
+                      placeholder="留空使用来源名称"
+                    />
+                    <p class="field-help">
+                      导入后归入的节点分组，方便筛选；留空时使用来源名称。
+                    </p>
+                  </el-form-item>
+                  <el-form-item label="节点名前缀">
+                    <el-input
+                      v-model="sourceForm.namePrefix"
+                      placeholder="留空使用 [来源名称]"
+                    />
+                    <p class="field-help">
+                      加在节点名称前，用于区分服务器，不改变连接地址。
+                    </p>
+                  </el-form-item>
+                  <el-form-item label="删除远端已缺失节点">
+                    <el-switch v-model="sourceForm.deleteMissing" />
+                    <p class="field-help">
+                      清理该来源在远端已删除的节点；请求失败时保留已有节点。
+                    </p>
+                  </el-form-item>
+                </div>
+              </el-collapse-item>
+
+              <el-collapse-item
+                title="高级设置 · 节点连接参数改写"
+                name="rules"
+              >
+                <div class="rewrite-head">
+                  <span
+                    >仅在需要 CDN /
+                    自定义连接参数时设置。先选匹配条件，再填写替换参数；留空保持原值，不会修改远端面板。</span
+                  >
+                  <el-button
+                    size="small"
+                    type="primary"
+                    :icon="Plus"
+                    @click="addRewriteRule"
+                  >
+                    添加规则
+                  </el-button>
+                </div>
+                <div v-if="rewriteRuleRows.length === 0" class="empty-rules">
+                  暂无改写规则，同步时保持远端节点原始参数。
+                </div>
+                <div
+                  v-for="(rule, index) in rewriteRuleRows"
+                  :key="index"
+                  class="rewrite-rule"
+                >
+                  <div class="rewrite-rule-title">
+                    <span>规则 {{ index + 1 }}</span>
+                    <el-button
+                      link
+                      type="danger"
+                      :icon="Delete"
+                      @click="removeRewriteRule(index)"
+                    >
+                      删除
+                    </el-button>
+                  </div>
+                  <div class="form-grid rule-grid">
+                    <el-form-item label="名称包含">
+                      <el-input
+                        v-model="rule.nameContains"
+                        placeholder="可选"
+                      />
+                      <p class="field-help">
+                        仅匹配名称包含此文字的节点，留空则不限。
+                      </p>
+                    </el-form-item>
+                    <el-form-item label="协议（匹配条件）">
+                      <el-select
+                        v-model="rule.protocol"
+                        clearable
+                        placeholder="不限"
+                      >
+                        <el-option label="VLESS" value="vless" />
+                        <el-option label="VMess" value="vmess" />
+                        <el-option label="Trojan" value="trojan" />
+                      </el-select>
+                      <p class="field-help">
+                        只匹配已有协议，不会把节点转换为其他协议。
+                      </p>
+                    </el-form-item>
+                    <el-form-item label="传输方式（匹配条件）">
+                      <el-select
+                        v-model="rule.transport"
+                        clearable
+                        placeholder="不限"
+                      >
+                        <el-option label="XHTTP" value="xhttp" />
+                        <el-option label="TCP" value="tcp" />
+                        <el-option label="WS" value="ws" />
+                        <el-option label="gRPC" value="grpc" />
+                      </el-select>
+                      <p class="field-help">
+                        只对符合此传输方式的节点生效，不选则不限。
+                      </p>
+                    </el-form-item>
+                    <el-form-item label="连接地址">
+                      <el-input v-model="rule.address" placeholder="不填不改" />
+                      <p class="field-help">
+                        客户端实际连接的域名或 IP，例如 CDN 地址。
+                      </p>
+                    </el-form-item>
+                    <el-form-item label="端口">
+                      <el-input v-model="rule.port" placeholder="不填不改" />
+                      <p class="field-help">客户端连接的服务端口，例如 443。</p>
+                    </el-form-item>
+                    <el-form-item label="连接安全方式">
+                      <el-select
+                        v-model="rule.security"
+                        clearable
+                        placeholder="不改"
+                      >
+                        <el-option label="TLS" value="tls" />
+                        <el-option label="Reality" value="reality" />
+                        <el-option label="None" value="none" />
+                      </el-select>
+                      <p class="field-help">
+                        必须与服务端的 TLS / Reality 等配置相符。
+                      </p>
+                    </el-form-item>
+                    <el-form-item label="SNI · TLS 域名">
+                      <el-input v-model="rule.sni" placeholder="不填不改" />
+                      <p class="field-help">
+                        TLS 握手域名，应符合服务器证书或 Reality 配置。
+                      </p>
+                    </el-form-item>
+                    <el-form-item label="Host · HTTP 域名">
+                      <el-input v-model="rule.host" placeholder="不填不改" />
+                      <p class="field-help">
+                        XHTTP / WS 请求中的域名，可与连接 IP 不同。
+                      </p>
+                    </el-form-item>
+                    <el-form-item label="Fingerprint · TLS 指纹">
+                      <el-select
+                        v-model="rule.fingerprint"
+                        clearable
+                        placeholder="不改"
+                      >
+                        <el-option label="chrome" value="chrome" />
+                        <el-option label="firefox" value="firefox" />
+                        <el-option label="safari" value="safari" />
+                        <el-option label="random" value="random" />
+                      </el-select>
+                      <p class="field-help">
+                        模拟浏览器的 TLS 握手特征，例如 chrome。
+                      </p>
+                    </el-form-item>
+                    <el-form-item label="ALPN · 协商协议">
+                      <el-select
+                        v-model="rule.alpn"
+                        multiple
+                        collapse-tags
+                        placeholder="不改"
+                      >
+                        <el-option label="h2" value="h2" />
+                        <el-option label="http/1.1" value="http/1.1" />
+                      </el-select>
+                      <p class="field-help">
+                        协商 HTTP/2（h2）或 HTTP/1.1，按服务端要求选择。
+                      </p>
+                    </el-form-item>
+                    <el-form-item label="Path · 请求路径">
+                      <el-input v-model="rule.path" placeholder="不填不改" />
+                      <p class="field-help">
+                        XHTTP / WS 的路径，例如 /api/v1/sync，须与服务端一致。
+                      </p>
+                    </el-form-item>
+                    <el-form-item label="Flow · 流控模式">
+                      <el-input v-model="rule.flow" placeholder="不填不改" />
+                      <p class="field-help">
+                        VLESS 流控设置，如
+                        xtls-rprx-vision；没有服务端要求时留空。
+                      </p>
+                    </el-form-item>
+                  </div>
+                </div>
+              </el-collapse-item>
+            </el-collapse>
+
+            <div class="source-actions">
               <el-button
                 type="primary"
                 :icon="Refresh"
-                :loading="syncingAllSources"
-                @click="syncAllSources"
+                :loading="sourceSyncing"
+                @click="syncOneSource(sourceForm)"
               >
-                同步全部
+                保存并同步
               </el-button>
-            </div>
-            <el-input
-              v-model="sourceKeyword"
-              :prefix-icon="Search"
-              clearable
-              placeholder="搜索来源、地址、分组"
-              class="source-search"
-            />
-            <div v-loading="sourceLoading" class="source-cards">
-              <button
-                v-for="source in sourceRows"
-                :key="source.id"
-                class="source-card"
-                :class="{
-                  active: editingSourceId === source.id,
-                  disabled: !source.enabled,
-                }"
-                type="button"
-                @click="editSource(source)"
-              >
-                <span class="source-card-title">
-                  {{ source.name }}
-                  <el-tag
-                    size="small"
-                    :type="source.enabled ? 'success' : 'info'"
-                  >
-                    {{ source.enabled ? "启用" : "停用" }}
-                  </el-tag>
-                </span>
-                <span class="source-card-address">{{
-                  getSourceAddress(source)
-                }}</span>
-                <span class="source-card-footer">
-                  <el-tag size="small" :type="getStatusTag(source)">
-                    {{ getStatusText(source) }}
-                  </el-tag>
-                  <span>{{
-                    source.authType === "apiToken" ? "API Token" : "SSH 密码"
-                  }}</span>
-                </span>
-              </button>
-              <el-empty
-                v-if="sourceRows.length === 0"
-                description="暂无来源"
-                :image-size="80"
-              />
-            </div>
-          </div>
-
-          <div class="source-editor">
-            <div class="panel-head compact">
-              <div>
-                <h3>{{ editingSourceId ? "编辑节点来源" : "添加节点来源" }}</h3>
-                <p>连接远端 3x-ui 面板，把它的节点导入当前节点池。</p>
-              </div>
-              <div class="source-head-actions">
-                <el-button :icon="Plus" @click="beginCreateSource"
-                  >新来源</el-button
-                >
-              </div>
-            </div>
-
-            <el-form
-              :model="sourceForm"
-              label-position="top"
-              class="source-form"
-            >
-              <div class="form-grid">
-                <el-form-item label="来源名称">
-                  <el-input
-                    v-model="sourceForm.name"
-                    placeholder="例如：香港 VPS / 洛杉矶 3x-ui"
-                  />
-                  <p class="field-help">
-                    用于区分不同 VPS，选择订阅节点时也会显示这个名称。
-                  </p>
-                </el-form-item>
-                <el-form-item label="认证方式">
-                  <el-segmented
-                    v-model="sourceForm.authType"
-                    :options="[
-                      { label: 'SSH 账号密码', value: 'password' },
-                      { label: 'API Token', value: 'apiToken' },
-                    ]"
-                  />
-                </el-form-item>
-                <el-form-item label="启用同步">
-                  <el-switch v-model="sourceForm.enabled" />
-                  <p class="field-help">
-                    关闭后「同步全部」会跳过此来源，已导入的节点仍保留。
-                  </p>
-                </el-form-item>
-              </div>
-
-              <p class="connection-guide">
-                {{
-                  sourceForm.authType === "apiToken"
-                    ? "API 方式：填写面板完整地址和 Token，再确认下面的订阅服务器地址。面板和订阅服务可能使用不同端口。"
-                    : "SSH 方式：使用 VPS 的系统账号连接，需要能读取 x-ui 数据库，并且远端已安装 Python 3。面板登录账号不能用于 SSH。"
-                }}
-              </p>
-              <div
-                v-if="sourceForm.authType === 'password'"
-                class="form-grid ssh-grid"
-              >
-                <el-form-item label="SSH 主机">
-                  <el-input
-                    v-model="sourceForm.host"
-                    placeholder="1.2.3.4 或 example.com"
-                  />
-                </el-form-item>
-                <el-form-item label="SSH 端口">
-                  <el-input-number
-                    v-model="sourceForm.sshPort"
-                    :min="1"
-                    :max="65535"
-                    controls-position="right"
-                  />
-                  <p class="field-help">
-                    VPS 的 SSH 服务端口，通常为 22，与面板端口无关。
-                  </p>
-                </el-form-item>
-                <el-form-item label="用户名">
-                  <el-input v-model="sourceForm.username" placeholder="root" />
-                  <p class="field-help">填写 VPS 系统用户，例如 root。</p>
-                </el-form-item>
-                <el-form-item label="密码">
-                  <el-input
-                    v-model="sourceForm.password"
-                    type="password"
-                    show-password
-                    placeholder="编辑时留空保留原密码"
-                  />
-                </el-form-item>
-              </div>
-
-              <div v-else class="form-grid api-grid">
-                <el-form-item label="面板基础地址">
-                  <el-input
-                    v-model="sourceForm.panelBaseUrl"
-                    placeholder="https://panel.example.com:54321/面板路径"
-                  />
-                  <p class="field-help">
-                    包含 https://、端口（如有）和面板安全路径；不要包含
-                    /panel/api/inbounds/list，程序会自动拼接。
-                  </p>
-                </el-form-item>
-                <el-form-item label="API Token">
-                  <el-input
-                    v-model="sourceForm.apiToken"
-                    placeholder="保存后显示当前 Token"
-                  />
-                  <p class="field-help">
-                    从 3x-ui 面板的 API
-                    设置复制。保存后显示当前值；编辑时留空可保留原 Token。
-                  </p>
-                </el-form-item>
-              </div>
-
-              <el-collapse v-model="sourceAdvanced" class="source-collapse">
-                <el-collapse-item
-                  title="同步设置 · 订阅服务器与导入方式"
-                  name="sync"
-                >
-                  <div class="form-grid advanced-grid">
-                    <el-form-item
-                      v-if="sourceForm.authType === 'password'"
-                      label="x-ui 数据库路径"
-                    >
-                      <el-input v-model="sourceForm.xuiDbPath" />
-                      <p class="field-help">
-                        数据库在远端 VPS 上的绝对路径，通常是
-                        /etc/x-ui/x-ui.db。
-                      </p>
-                    </el-form-item>
-                    <el-form-item label="订阅服务器地址">
-                      <el-input
-                        v-model="sourceForm.subBaseUrl"
-                        placeholder="留空时自动探测或保持原地址"
-                      />
-                      <p class="field-help">
-                        只填写协议、域名和端口，例如
-                        https://sub.example.com:2096；不要包含订阅路径和客户端标识。
-                      </p>
-                    </el-form-item>
-                    <el-form-item label="订阅路径">
-                      <el-input
-                        v-model="sourceForm.subPath"
-                        placeholder="例如 dingyue"
-                      />
-                      <p class="field-help">
-                        面板订阅设置中的路径，例如 dingyue。实际请求：服务器地址
-                        / 路径 / 客户端订阅标识。
-                      </p>
-                    </el-form-item>
-                    <el-form-item label="导入分组">
-                      <el-input
-                        v-model="sourceForm.groupName"
-                        placeholder="留空使用来源名称"
-                      />
-                      <p class="field-help">
-                        导入后归入的节点分组，方便筛选；留空时使用来源名称。
-                      </p>
-                    </el-form-item>
-                    <el-form-item label="节点名前缀">
-                      <el-input
-                        v-model="sourceForm.namePrefix"
-                        placeholder="留空使用 [来源名称]"
-                      />
-                      <p class="field-help">
-                        加在节点名称前，用于区分服务器，不改变连接地址。
-                      </p>
-                    </el-form-item>
-                    <el-form-item label="删除远端已缺失节点">
-                      <el-switch v-model="sourceForm.deleteMissing" />
-                      <p class="field-help">
-                        清理该来源在远端已删除的节点；请求失败时保留已有节点。
-                      </p>
-                    </el-form-item>
-                  </div>
-                </el-collapse-item>
-
-                <el-collapse-item
-                  title="高级设置 · 节点连接参数改写"
-                  name="rules"
-                >
-                  <div class="rewrite-head">
-                    <span
-                      >仅在需要 CDN /
-                      自定义连接参数时设置。先选匹配条件，再填写替换参数；留空保持原值，不会修改远端面板。</span
-                    >
-                    <el-button
-                      size="small"
-                      type="primary"
-                      :icon="Plus"
-                      @click="addRewriteRule"
-                    >
-                      添加规则
-                    </el-button>
-                  </div>
-                  <div v-if="rewriteRuleRows.length === 0" class="empty-rules">
-                    暂无改写规则，同步时保持远端节点原始参数。
-                  </div>
-                  <div
-                    v-for="(rule, index) in rewriteRuleRows"
-                    :key="index"
-                    class="rewrite-rule"
-                  >
-                    <div class="rewrite-rule-title">
-                      <span>规则 {{ index + 1 }}</span>
-                      <el-button
-                        link
-                        type="danger"
-                        :icon="Delete"
-                        @click="removeRewriteRule(index)"
-                      >
-                        删除
-                      </el-button>
-                    </div>
-                    <div class="form-grid rule-grid">
-                      <el-form-item label="名称包含">
-                        <el-input
-                          v-model="rule.nameContains"
-                          placeholder="可选"
-                        />
-                        <p class="field-help">
-                          仅匹配名称包含此文字的节点，留空则不限。
-                        </p>
-                      </el-form-item>
-                      <el-form-item label="协议（匹配条件）">
-                        <el-select
-                          v-model="rule.protocol"
-                          clearable
-                          placeholder="不限"
-                        >
-                          <el-option label="VLESS" value="vless" />
-                          <el-option label="VMess" value="vmess" />
-                          <el-option label="Trojan" value="trojan" />
-                        </el-select>
-                        <p class="field-help">
-                          只匹配已有协议，不会把节点转换为其他协议。
-                        </p>
-                      </el-form-item>
-                      <el-form-item label="传输方式（匹配条件）">
-                        <el-select
-                          v-model="rule.transport"
-                          clearable
-                          placeholder="不限"
-                        >
-                          <el-option label="XHTTP" value="xhttp" />
-                          <el-option label="TCP" value="tcp" />
-                          <el-option label="WS" value="ws" />
-                          <el-option label="gRPC" value="grpc" />
-                        </el-select>
-                        <p class="field-help">
-                          只对符合此传输方式的节点生效，不选则不限。
-                        </p>
-                      </el-form-item>
-                      <el-form-item label="连接地址">
-                        <el-input
-                          v-model="rule.address"
-                          placeholder="不填不改"
-                        />
-                        <p class="field-help">
-                          客户端实际连接的域名或 IP，例如 CDN 地址。
-                        </p>
-                      </el-form-item>
-                      <el-form-item label="端口">
-                        <el-input v-model="rule.port" placeholder="不填不改" />
-                        <p class="field-help">
-                          客户端连接的服务端口，例如 443。
-                        </p>
-                      </el-form-item>
-                      <el-form-item label="连接安全方式">
-                        <el-select
-                          v-model="rule.security"
-                          clearable
-                          placeholder="不改"
-                        >
-                          <el-option label="TLS" value="tls" />
-                          <el-option label="Reality" value="reality" />
-                          <el-option label="None" value="none" />
-                        </el-select>
-                        <p class="field-help">
-                          必须与服务端的 TLS / Reality 等配置相符。
-                        </p>
-                      </el-form-item>
-                      <el-form-item label="SNI · TLS 域名">
-                        <el-input v-model="rule.sni" placeholder="不填不改" />
-                        <p class="field-help">
-                          TLS 握手域名，应符合服务器证书或 Reality 配置。
-                        </p>
-                      </el-form-item>
-                      <el-form-item label="Host · HTTP 域名">
-                        <el-input v-model="rule.host" placeholder="不填不改" />
-                        <p class="field-help">
-                          XHTTP / WS 请求中的域名，可与连接 IP 不同。
-                        </p>
-                      </el-form-item>
-                      <el-form-item label="Fingerprint · TLS 指纹">
-                        <el-select
-                          v-model="rule.fingerprint"
-                          clearable
-                          placeholder="不改"
-                        >
-                          <el-option label="chrome" value="chrome" />
-                          <el-option label="firefox" value="firefox" />
-                          <el-option label="safari" value="safari" />
-                          <el-option label="random" value="random" />
-                        </el-select>
-                        <p class="field-help">
-                          模拟浏览器的 TLS 握手特征，例如 chrome。
-                        </p>
-                      </el-form-item>
-                      <el-form-item label="ALPN · 协商协议">
-                        <el-select
-                          v-model="rule.alpn"
-                          multiple
-                          collapse-tags
-                          placeholder="不改"
-                        >
-                          <el-option label="h2" value="h2" />
-                          <el-option label="http/1.1" value="http/1.1" />
-                        </el-select>
-                        <p class="field-help">
-                          协商 HTTP/2（h2）或 HTTP/1.1，按服务端要求选择。
-                        </p>
-                      </el-form-item>
-                      <el-form-item label="Path · 请求路径">
-                        <el-input v-model="rule.path" placeholder="不填不改" />
-                        <p class="field-help">
-                          XHTTP / WS 的路径，例如 /api/v1/sync，须与服务端一致。
-                        </p>
-                      </el-form-item>
-                      <el-form-item label="Flow · 流控模式">
-                        <el-input v-model="rule.flow" placeholder="不填不改" />
-                        <p class="field-help">
-                          VLESS 流控设置，如
-                          xtls-rprx-vision；没有服务端要求时留空。
-                        </p>
-                      </el-form-item>
-                    </div>
-                  </div>
-                </el-collapse-item>
-              </el-collapse>
-
-              <div class="source-actions">
-                <el-button
-                  type="primary"
-                  :icon="Refresh"
-                  :loading="sourceSyncing"
-                  @click="syncOneSource(sourceForm)"
-                >
-                  保存并同步
-                </el-button>
-                <el-button
-                  :icon="Check"
-                  :loading="sourceSaving"
-                  @click="saveSource"
-                >
-                  仅保存配置
-                </el-button>
-                <el-button :icon="Close" @click="beginCreateSource"
-                  >重置</el-button
-                >
-                <el-button
-                  v-if="editingSourceId"
-                  type="danger"
-                  :icon="Delete"
-                  @click="removeSource(sourceForm)"
-                >
-                  删除来源
-                </el-button>
-              </div>
-            </el-form>
-
-            <div class="local-sync">
-              <div>
-                <strong>本机 x-ui 数据库同步</strong>
-                <span>保留旧入口，适合应用和 x-ui 在同一台机器时使用。</span>
-              </div>
               <el-button
-                :loading="syncingLocalXUI"
-                :icon="Refresh"
-                @click="syncLocalXUI"
+                :icon="Check"
+                :loading="sourceSaving"
+                @click="saveSource"
               >
-                同步本机
+                仅保存配置
+              </el-button>
+              <el-button :icon="Close" @click="beginCreateSource"
+                >重置</el-button
+              >
+              <el-button
+                v-if="editingSourceId"
+                type="danger"
+                :icon="Delete"
+                @click="removeSource(sourceForm)"
+              >
+                删除来源
               </el-button>
             </div>
+          </el-form>
 
-            <el-alert
-              v-if="lastSyncResult"
-              :title="formatSyncResult(lastSyncResult)"
-              type="success"
-              show-icon
-              :closable="false"
-              class="sync-result"
-            />
+          <div v-if="sourceMode === 'password'" class="local-sync">
+            <div>
+              <strong>本机 x-ui 数据库同步</strong>
+              <span>保留旧入口，适合应用和 x-ui 在同一台机器时使用。</span>
+            </div>
+            <el-button
+              :loading="syncingLocalXUI"
+              :icon="Refresh"
+              @click="syncLocalXUI"
+            >
+              同步本机
+            </el-button>
           </div>
-        </section>
-      </el-tab-pane>
-    </el-tabs>
+
+          <el-alert
+            v-if="lastSyncResult"
+            :title="formatSyncResult(lastSyncResult)"
+            type="success"
+            show-icon
+            :closable="false"
+            class="sync-result"
+          />
+        </div>
+      </section>
+    </template>
 
     <el-dialog
       v-model="nodeDialogVisible"
@@ -1491,7 +1509,7 @@ function formatSyncResult(result?: SyncResult) {
 .node-page {
   min-height: 100%;
   padding: 20px;
-  color: #1f2937;
+  color: var(--sx-text);
   background:
     linear-gradient(
       180deg,
@@ -1506,7 +1524,7 @@ function formatSyncResult(result?: SyncResult) {
 .workspace-panel,
 .source-list,
 .source-editor {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
@@ -1525,13 +1543,13 @@ function formatSyncResult(result?: SyncResult) {
   margin: 0;
   font-weight: 700;
   letter-spacing: 0;
-  color: #111827;
+  color: var(--sx-text);
 }
 
 .node-toolbar p,
 .panel-head p {
   margin: 6px 0 0;
-  color: #64748b;
+  color: var(--sx-muted);
 }
 
 .toolbar-actions,
@@ -1586,12 +1604,12 @@ function formatSyncResult(result?: SyncResult) {
 }
 
 .summary-item span {
-  color: #64748b;
+  color: var(--sx-muted);
   font-size: 13px;
 }
 
 .summary-item strong {
-  color: #111827;
+  color: var(--sx-text);
   font-size: 30px;
   line-height: 1;
 }
@@ -1637,21 +1655,21 @@ function formatSyncResult(result?: SyncResult) {
 .batch-bar {
   padding: 10px 12px;
   margin-bottom: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
-  background: rgba(248, 250, 252, 0.86);
+  background: var(--sx-page);
 }
 
 .batch-bar span {
   margin-right: auto;
-  color: #64748b;
+  color: var(--sx-muted);
 }
 
 .node-table {
-  border: 1px solid #edf2f7;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
   overflow: hidden;
-  background: #fff;
+  background: var(--sx-surface);
 }
 
 .node-name {
@@ -1671,11 +1689,11 @@ function formatSyncResult(result?: SyncResult) {
 .node-meta {
   margin-top: 4px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--sx-muted);
 }
 
 .link-text {
-  color: #334155;
+  color: var(--sx-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
 }
@@ -1704,7 +1722,7 @@ function formatSyncResult(result?: SyncResult) {
   text-align: left;
   cursor: pointer;
   background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
   transition:
     border-color 0.16s ease,
@@ -1714,9 +1732,9 @@ function formatSyncResult(result?: SyncResult) {
 
 .source-card:hover,
 .source-card.active {
-  border-color: #0ea5e9;
-  box-shadow: 0 10px 24px rgba(14, 165, 233, 0.12);
-  transform: translateY(-1px);
+  border-color: var(--el-color-primary);
+  box-shadow: none;
+  transform: none;
 }
 
 .source-card.disabled {
@@ -1739,7 +1757,7 @@ function formatSyncResult(result?: SyncResult) {
 .source-card-address,
 .source-card-footer {
   font-size: 13px;
-  color: #64748b;
+  color: var(--sx-muted);
 }
 
 .source-form {
@@ -1767,21 +1785,21 @@ function formatSyncResult(result?: SyncResult) {
 
 .source-collapse {
   margin-top: 4px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--sx-surface);
 }
 
 .rewrite-head {
   justify-content: space-between;
   margin-bottom: 12px;
-  color: #64748b;
+  color: var(--sx-muted);
 }
 
 .empty-rules {
   padding: 16px;
-  color: #64748b;
-  background: rgba(248, 250, 252, 0.86);
+  color: var(--sx-muted);
+  background: var(--sx-page);
   border: 1px dashed #cbd5e1;
   border-radius: 8px;
 }
@@ -1789,7 +1807,7 @@ function formatSyncResult(result?: SyncResult) {
 .rewrite-rule {
   padding: 14px;
   margin-bottom: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
   background: rgba(248, 250, 252, 0.72);
 }
@@ -1824,9 +1842,9 @@ function formatSyncResult(result?: SyncResult) {
   gap: 12px;
   padding: 12px;
   margin-top: 14px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
-  background: rgba(248, 250, 252, 0.86);
+  background: var(--sx-page);
 }
 
 .local-sync div {
@@ -1835,7 +1853,7 @@ function formatSyncResult(result?: SyncResult) {
 }
 
 .local-sync span {
-  color: #64748b;
+  color: var(--sx-muted);
 }
 
 .sync-result {
@@ -1859,7 +1877,7 @@ function formatSyncResult(result?: SyncResult) {
   padding: 0 16px;
   border: 1px solid transparent;
   border-radius: 8px;
-  color: #64748b;
+  color: var(--sx-muted);
   line-height: 40px;
 }
 
@@ -1881,7 +1899,7 @@ function formatSyncResult(result?: SyncResult) {
 
 :deep(.el-collapse-item__header) {
   padding: 0 14px;
-  border-bottom-color: #edf2f7;
+  border-bottom-color: var(--sx-border);
   font-weight: 700;
 }
 
@@ -1890,8 +1908,8 @@ function formatSyncResult(result?: SyncResult) {
 }
 
 :deep(.el-table th.el-table__cell) {
-  background: #f8fafc;
-  color: #475569;
+  background: var(--sx-page);
+  color: var(--sx-muted);
 }
 
 :deep(.el-form-item) {

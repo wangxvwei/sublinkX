@@ -2,6 +2,7 @@
 <template>
   <el-menu
     :default-active="currentRoute.path"
+    :default-openeds="openGroups"
     :collapse="!appStore.sidebar.opened"
     :background-color="variables['menu-background']"
     :text-color="variables['menu-text']"
@@ -43,6 +44,11 @@ const props = defineProps({
     required: true,
   },
 });
+const openGroups = computed(() =>
+  currentRoute.matched
+    .filter((route) => route.children?.length)
+    .map((route) => route.path)
+);
 
 /**
  * 解析路径

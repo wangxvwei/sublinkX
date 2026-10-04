@@ -1,6 +1,9 @@
 <template>
-  <div
-    class="px-[15px] flex items-center justify-center color-[var(--el-text-color-regular)]"
+  <button
+    type="button"
+    class="sidebar-trigger px-[15px] flex items-center justify-center color-[var(--el-text-color-regular)]"
+    :aria-label="isActive ? '收起导航' : '展开导航'"
+    :aria-expanded="isActive"
     @click="toggleClick"
   >
     <svg-icon
@@ -8,7 +11,7 @@
       :class="{ 'is-active': isActive }"
       icon-class="indent-decrease"
     />
-  </div>
+  </button>
 </template>
 <script setup lang="ts">
 defineProps({
@@ -27,6 +30,13 @@ function toggleClick() {
 </script>
 
 <style scoped lang="scss">
+.sidebar-trigger {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 15px;
+  background: transparent;
+  cursor: pointer;
+}
 .hamburger {
   vertical-align: middle;
   cursor: pointer;

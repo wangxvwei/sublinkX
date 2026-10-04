@@ -1,14 +1,14 @@
 export default {
   // 路由国际化
   route: {
-    dashboard: "概览",
+    dashboard: "总览工作台",
     document: "项目文档",
     userset: "账户与更新",
-    system:"系统设置",
-    nodelist:"节点与来源",
-    sublist:"我的订阅",
-    subcription:"订阅工作台",
-    templatelist:"输出模板",
+    system: "系统设置",
+    nodelist: "节点库",
+    sublist: "我的订阅",
+    subcription: "订阅工作台",
+    templatelist: "输出模板",
   },
   // 登录页面国际化
   login: {
@@ -30,19 +30,19 @@ export default {
       },
     },
   },
-    // 重置密码页面国际化
-    userset:{
-      title: "修改密码",
-      newUsername: "新账号",
-      newPassword: "新密码",
-      message: {
-        title:"提示",
-        xx1:"账号或密码不能为空",
-        xx2: "密码长度不能小于6位",
-        xx3:"你确定要重置密码吗",
-        xx4:"密码重置成功，新密码是：",
-      },
+  // 重置密码页面国际化
+  userset: {
+    title: "修改密码",
+    newUsername: "新账号",
+    newPassword: "新密码",
+    message: {
+      title: "提示",
+      xx1: "账号或密码不能为空",
+      xx2: "密码长度不能小于6位",
+      xx3: "你确定要重置密码吗",
+      xx4: "密码重置成功，新密码是：",
     },
+  },
   // 导航栏国际化
   navbar: {
     dashboard: "首页",

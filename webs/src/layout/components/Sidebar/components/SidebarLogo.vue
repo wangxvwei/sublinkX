@@ -2,12 +2,14 @@
   <div class="logo-container">
     <transition enter-active-class="animate__animated animate__fadeInLeft">
       <router-link v-if="collapse" class="wh-full flex-center" to="/">
-        <img v-if="settingsStore.sidebarLogo" :src="logo" class="logo-image" />
+        <span class="brand-mark">S<span>↗</span></span>
       </router-link>
 
       <router-link v-else class="wh-full flex-center" to="/">
-        <img v-if="settingsStore.sidebarLogo" :src="logo" class="logo-image" />
-        <span class="logo-title"> {{ defaultSettings.title }}</span>
+        <span class="brand-mark">S<span>↗</span></span>
+        <span class="logo-title"
+          >{{ defaultSettings.title }}<small>SUBSCRIPTION STUDIO</small></span
+        >
       </router-link>
     </transition>
   </div>
@@ -25,19 +27,18 @@ defineProps({
     required: true,
   },
 });
-
-const logo = ref(new URL(`../../../../assets/logo.png`, import.meta.url).href);
 </script>
 
 <style lang="scss" scoped>
 .logo-container {
   width: 100%;
   height: $navbar-height;
-  padding: 8px 10px 4px;
+  padding: 12px 20px;
   background: transparent;
 
   a {
-    height: 46px;
+    height: 38px;
+    justify-content: flex-start;
     border: none;
     border-radius: 8px;
     background: transparent;
@@ -51,10 +52,36 @@ const logo = ref(new URL(`../../../../assets/logo.png`, import.meta.url).href);
   .logo-title {
     flex-shrink: 0; /* 防止容器在空间不足时缩小 */
     margin-left: 10px;
-    color: var(--sx-text);
+    color: #f1f7f4;
     font-size: 19px;
     font-weight: 600;
     letter-spacing: 0;
+  }
+  .logo-title small {
+    display: block;
+    margin-top: 1px;
+    color: #91b4a8;
+    font-size: 8px;
+    font-weight: 400;
+    letter-spacing: 1.2px;
+  }
+  .brand-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    flex: 0 0 34px;
+    height: 34px;
+    border-radius: 10px;
+    color: #113b2f;
+    background: #b9eccf;
+    font-size: 22px;
+    font-weight: 750;
+  }
+  .brand-mark span {
+    align-self: flex-start;
+    padding-top: 2px;
+    font-size: 14px;
   }
 }
 

@@ -200,20 +200,63 @@ function goNodes() {
   <div class="dashboard-page" v-loading="loading">
     <section class="hero-panel">
       <div class="hero-copy">
-        <span class="eyebrow">sublinkX 控制台</span>
-        <h1>订阅工作台</h1>
-        <p>
-          先准备节点，再创建订阅，最后把订阅地址导入客户端。这里可查看节点、分组和订阅的维护情况。
-        </p>
+        <span class="eyebrow">YOUR NETWORK, ORGANIZED.</span>
+        <h1>{{ greeting }}<br />让订阅管理，更有条理。</h1>
+        <p>接入你的服务器，整理可用节点。把复杂的配置，变成一份清晰的订阅。</p>
+        <div class="hero-actions">
+          <el-button
+            type="primary"
+            :icon="Collection"
+            @click="router.push('/subcription/subs')"
+            >管理我的订阅 ↗</el-button
+          >
+          <el-button :icon="Refresh" @click="refreshDashboard"
+            >刷新数据</el-button
+          >
+        </div>
       </div>
-      <div class="hero-actions">
-        <el-button :icon="Refresh" @click="refreshDashboard"
-          >刷新数据</el-button
-        >
-        <el-button type="primary" :icon="Link" @click="goNodes"
-          >管理节点</el-button
-        >
+      <div class="network-art" aria-label="当前节点数量">
+        <div class="network-orbit orbit-one"></div>
+        <div class="network-orbit orbit-two"></div>
+        <div class="network-core">
+          <small>NODE LIBRARY</small><strong>{{ nodeTotal }}</strong
+          ><span>个节点，随时组合</span>
+        </div>
+        <span class="network-dot dot-one"
+          ><el-icon><Link /></el-icon></span
+        ><span class="network-dot dot-two"
+          ><el-icon><Connection /></el-icon></span
+        ><span class="network-dot dot-three"
+          ><el-icon><Collection /></el-icon
+        ></span>
       </div>
+    </section>
+
+    <section class="workspace-flow" aria-label="管理流程快捷入口">
+      <router-link to="/resources/sources/api"
+        ><span class="flow-number">01</span>
+        <div>
+          <strong>接入来源</strong>
+          <p>API 面板 / SSH 服务器</p>
+        </div>
+        <span class="flow-arrow">↗</span></router-link
+      >
+      <router-link to="/subcription/nodes"
+        ><span class="flow-number">02</span>
+        <div>
+          <strong>整理节点</strong>
+          <p>导入、分组与编辑节点</p>
+        </div>
+        <span class="flow-arrow">↗</span></router-link
+      >
+      <router-link to="/subcription/subs"
+        ><span class="flow-number">03</span>
+        <div>
+          <strong>分发订阅</strong>
+          <p>组合节点，导入客户端</p>
+        </div>
+        <span class="flow-arrow">↗</span></router-link
+      >
     </section>
 
     <section class="metric-grid">
@@ -343,7 +386,7 @@ function goNodes() {
 .dashboard-page {
   min-height: 100%;
   padding: 20px;
-  color: #1f2937;
+  color: var(--sx-text);
   background:
     linear-gradient(
       180deg,
@@ -356,7 +399,7 @@ function goNodes() {
 .hero-panel,
 .panel,
 .metric-card {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
@@ -390,7 +433,7 @@ function goNodes() {
 .compact-row span,
 .subscription-row span {
   margin: 6px 0 0;
-  color: #64748b;
+  color: var(--sx-muted);
 }
 
 .hero-actions {
@@ -413,14 +456,14 @@ function goNodes() {
 }
 
 .metric-card span {
-  color: #64748b;
+  color: var(--sx-muted);
   font-size: 13px;
 }
 
 .metric-card strong {
   display: block;
   margin-top: 4px;
-  color: #111827;
+  color: var(--sx-text);
   font-size: 30px;
   line-height: 1;
 }
@@ -503,12 +546,12 @@ function goNodes() {
 
 .status-row strong,
 .protocol-row strong {
-  color: #111827;
+  color: var(--sx-text);
 }
 
 .protocol-row span {
   width: 78px;
-  color: #334155;
+  color: var(--sx-text);
   font-weight: 650;
 }
 
@@ -517,7 +560,7 @@ function goNodes() {
   height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: #e5e7eb;
+  background: var(--sx-border);
 }
 
 .protocol-bar i {
@@ -530,7 +573,7 @@ function goNodes() {
 .compact-row,
 .subscription-row {
   padding: 12px 0;
-  border-bottom: 1px solid #eef2f7;
+  border-bottom: 1px solid var(--sx-border);
 }
 
 .compact-row:last-child,
@@ -541,7 +584,7 @@ function goNodes() {
 .compact-row strong,
 .subscription-row strong {
   display: block;
-  color: #111827;
+  color: var(--sx-text);
 }
 
 @media (max-width: 1180px) {

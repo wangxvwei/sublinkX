@@ -22,7 +22,7 @@
     </template>
 
     <!-- 显示具有多个子路由的父菜单项 -->
-    <el-sub-menu v-else :index="resolvePath(item.path)" teleported>
+    <el-sub-menu v-else :index="basePath" teleported>
       <template #title>
         <SidebarMenuItemTitle
           v-if="item.meta"

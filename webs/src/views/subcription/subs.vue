@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import md5 from "md5";
 import QrcodeVue from "qrcode.vue";
 import { VueDraggable } from "vue-draggable-plus";
@@ -11,6 +11,7 @@ import {
   Plus,
   Rank,
   Tickets,
+  Search,
 } from "@element-plus/icons-vue";
 import { AddSub, DelSub, UpdateSub, getSubs } from "@/api/subcription/subs";
 import { getNodes } from "@/api/subcription/node";
@@ -66,6 +67,10 @@ const subscriptions = ref<Sub[]>([]);
 const nodes = ref<Node[]>([]);
 const templates = ref<TemplateFile[]>([]);
 const selectedRows = ref<Sub[]>([]);
+const listView = ref("cards");
+const keyword = ref("");
+const editorStep = ref(0);
+const editorSteps = ["基本信息", "选择节点", "客户端输出"];
 const selectedNodeIds = ref<number[]>([]);
 const logs = ref<SubLog[]>([]);
 const subscriptionDialogVisible = ref(false);
@@ -95,10 +100,30 @@ const clientOptions: ClientOption[] = [
   { key: "v2ray", label: "V2Ray", param: "v2ray" },
 ];
 
+const filteredSubscriptions = computed(() =>
+  subscriptions.value.filter((row) =>
+    row.Name.toLowerCase().includes(keyword.value.trim().toLowerCase())
+  )
+);
+watch(keyword, () => (currentPage.value = 1));
 const pagedSubscriptions = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
-  return subscriptions.value.slice(start, start + pageSize.value);
+  return filteredSubscriptions.value.slice(start, start + pageSize.value);
 });
+
+function selectCard(row: Sub, checked: boolean) {
+  selectedRows.value = checked
+    ? [...selectedRows.value.filter((item) => item.ID !== row.ID), row]
+    : selectedRows.value.filter((item) => item.ID !== row.ID);
+}
+
+function goEditorStep(step: number) {
+  if (step > 0 && !subName.value.trim()) {
+    ElMessage.warning("请先填写订阅名称");
+    return;
+  }
+  editorStep.value = step;
+}
 
 const sourceGroups = computed(() => {
   const groups = new Map<string, { name: string; nodes: Node[] }>();
@@ -123,6 +148,13 @@ onMounted(async () => {
 async function loadSubscriptions() {
   const { data } = await getSubs();
   subscriptions.value = Array.isArray(data) ? data : [];
+  selectedRows.value = selectedRows.value.filter((row) =>
+    subscriptions.value.some((item) => item.ID === row.ID)
+  );
+  currentPage.value = Math.min(
+    currentPage.value,
+    Math.max(1, Math.ceil(filteredSubscriptions.value.length / pageSize.value))
+  );
 }
 
 async function loadNodes() {
@@ -136,6 +168,7 @@ async function loadTemplates() {
 }
 
 function openAddDialog() {
+  editorStep.value = 0;
   subscriptionOptionsOpen.value = [];
   dialogTitle.value = "添加订阅";
   subName.value = "";
@@ -151,6 +184,7 @@ function openAddDialog() {
 }
 
 function openEditDialog(row: Sub | any) {
+  editorStep.value = 0;
   subscriptionOptionsOpen.value = [];
   const config = parseConfig(row.Config);
   dialogTitle.value = "编辑订阅";
@@ -468,6 +502,7 @@ function formatDate(row: Sub | any) {
   <div class="subs-page">
     <section class="page-header">
       <div>
+        <span class="page-kicker">SUBSCRIPTION CENTER / 订阅中心</span>
         <h2>我的订阅</h2>
         <p>为 Clash Verge Rev / Mihomo、Surge 和 V2Ray 生成订阅地址。</p>
       </div>
@@ -476,13 +511,82 @@ function formatDate(row: Sub | any) {
       >
     </section>
 
-    <div class="workflow-guide" aria-label="订阅使用流程">
-      <span><b>1</b> 在「节点与来源」准备节点</span
-      ><span><b>2</b> 创建订阅并选择节点</span
-      ><span><b>3</b> 复制订阅地址到客户端</span>
+    <div class="subscription-toolbar">
+      <span
+        ><strong>{{ subscriptions.length }}</strong> 份订阅 · 已选
+        {{ selectedRows.length }} 份</span
+      >
+      <el-input
+        v-model="keyword"
+        :prefix-icon="Search"
+        clearable
+        placeholder="搜索订阅名称"
+        class="subscription-search"
+      />
+      <el-radio-group
+        v-model="listView"
+        size="small"
+        aria-label="列表布局"
+        @change="selectedRows = []"
+      >
+        <el-radio-button label="cards">卡片</el-radio-button
+        ><el-radio-button label="table">列表</el-radio-button>
+      </el-radio-group>
     </div>
-    <el-card shadow="never" class="content-card">
+    <div v-if="listView === 'cards'" class="subscription-grid">
+      <article
+        v-for="row in pagedSubscriptions"
+        :key="row.ID"
+        class="subscription-card"
+        :class="{ selected: selectedRows.some((item) => item.ID === row.ID) }"
+      >
+        <div class="subscription-card-top">
+          <span class="subscription-glyph"
+            ><el-icon><Link /></el-icon></span
+          ><el-checkbox
+            :model-value="selectedRows.some((item) => item.ID === row.ID)"
+            :aria-label="`选择订阅 ${row.Name}`"
+            @change="selectCard(row, !!$event)"
+          />
+        </div>
+        <h3>{{ row.Name }}</h3>
+        <p class="subscription-card-description">一份订阅，多个客户端</p>
+        <div class="subscription-card-stat">
+          <strong>{{ getNodeCount(row) }}</strong
+          ><span>个节点</span
+          ><el-tag size="small" effect="plain">{{
+            parseConfig(row.Config).udp ? "UDP 已启用" : "UDP 未启用"
+          }}</el-tag>
+        </div>
+        <div class="subscription-card-meta">
+          <span>创建于 {{ formatDate(row) }}</span
+          ><el-button link type="primary" :icon="Tickets" @click="showLogs(row)"
+            >访问记录</el-button
+          >
+        </div>
+        <div class="subscription-card-actions">
+          <el-button type="primary" :icon="Link" @click="showClientLinks(row)"
+            >订阅地址</el-button
+          ><el-button :icon="Edit" @click="openEditDialog(row)">编辑</el-button
+          ><el-button
+            :icon="Delete"
+            aria-label="删除订阅"
+            @click="deleteSubscription(row)"
+          />
+        </div>
+      </article>
+      <el-empty
+        v-if="!pagedSubscriptions.length"
+        :description="keyword ? '没有匹配的订阅' : '创建你的第一份订阅'"
+      />
+    </div>
+    <el-card
+      shadow="never"
+      class="content-card"
+      :class="{ 'cards-footer': listView === 'cards' }"
+    >
       <el-table
+        v-if="listView === 'table'"
         :data="pagedSubscriptions"
         stripe
         row-key="ID"
@@ -601,7 +705,7 @@ function formatDate(row: Sub | any) {
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           :page-sizes="[10, 20, 30, 40]"
-          :total="subscriptions.length"
+          :total="filteredSubscriptions.length"
           layout="total, sizes, prev, pager, next, jumper"
         />
       </div>
@@ -614,8 +718,29 @@ function formatDate(row: Sub | any) {
       top="5vh"
       class="subscription-editor"
     >
+      <nav class="editor-steps" aria-label="订阅编辑步骤">
+        <button
+          v-for="(step, index) in editorSteps"
+          :key="step"
+          type="button"
+          :class="{
+            active: editorStep === index,
+            complete: editorStep > index,
+          }"
+          :aria-current="editorStep === index ? 'step' : undefined"
+          @click="goEditorStep(index)"
+        >
+          <span>{{ index + 1 }}</span>
+          <div>
+            {{ step
+            }}<small>{{
+              ["名称与用途", "来源与节点顺序", "输出与高级设置"][index]
+            }}</small>
+          </div>
+        </button>
+      </nav>
       <el-form label-position="top">
-        <section class="form-section">
+        <section v-show="editorStep === 0" class="form-section">
           <div class="form-section__heading">
             <span class="form-section__number">1</span>
             <div>
@@ -626,9 +751,16 @@ function formatDate(row: Sub | any) {
           <el-form-item label="订阅名称">
             <el-input v-model="subName" placeholder="例如：全部节点" />
           </el-form-item>
+          <div class="editor-intro">
+            <el-icon><Link /></el-icon>
+            <h3>把节点整理成一份订阅</h3>
+            <p>
+              下一步选择节点与顺序，最后设置客户端输出。保存后，就能复制地址或扫码导入。
+            </p>
+          </div>
         </section>
 
-        <section class="form-section">
+        <section v-show="editorStep === 1" class="form-section">
           <div class="form-section__heading">
             <span class="form-section__number">2</span>
             <div>
@@ -705,7 +837,7 @@ function formatDate(row: Sub | any) {
             </el-select>
             <p v-if="!nodes.length" class="field-help">
               还没有节点，请先到<router-link to="/subcription/nodes"
-                >「节点与来源」</router-link
+                >「节点库」</router-link
               >添加或同步节点。
             </p>
           </el-form-item>
@@ -751,7 +883,7 @@ function formatDate(row: Sub | any) {
           </div>
         </section>
 
-        <section class="form-section output-section">
+        <section v-show="editorStep === 2" class="form-section output-section">
           <div class="form-section__heading">
             <span class="form-section__number">3</span>
             <div>
@@ -777,6 +909,7 @@ function formatDate(row: Sub | any) {
         </section>
 
         <el-collapse
+          v-show="editorStep === 2"
           v-model="subscriptionOptionsOpen"
           class="subscription-advanced"
         >
@@ -863,7 +996,16 @@ function formatDate(row: Sub | any) {
           >已选择 {{ selectedNodeIds.length }} 个节点</span
         >
         <el-button @click="subscriptionDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitSubscription"
+        <el-button v-if="editorStep > 0" @click="goEditorStep(editorStep - 1)"
+          >上一步</el-button
+        >
+        <el-button
+          v-if="editorStep < 2"
+          type="primary"
+          @click="goEditorStep(editorStep + 1)"
+          >下一步</el-button
+        >
+        <el-button v-else type="primary" @click="submitSubscription"
           >保存订阅</el-button
         >
       </template>
@@ -938,7 +1080,7 @@ function formatDate(row: Sub | any) {
 .subs-page {
   min-height: 100%;
   padding: 20px;
-  color: #1f2937;
+  color: var(--sx-text);
   background:
     linear-gradient(
       180deg,
@@ -955,7 +1097,7 @@ function formatDate(row: Sub | any) {
   gap: 20px;
   padding: 24px;
   margin-bottom: 16px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
@@ -963,7 +1105,7 @@ function formatDate(row: Sub | any) {
 
 .page-header h2 {
   margin: 0 0 6px;
-  color: #111827;
+  color: var(--sx-text);
   font-size: 26px;
   font-weight: 750;
   letter-spacing: 0;
@@ -971,11 +1113,11 @@ function formatDate(row: Sub | any) {
 
 .page-header p {
   margin: 0;
-  color: #64748b;
+  color: var(--sx-muted);
 }
 
 .content-card {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
@@ -987,13 +1129,13 @@ function formatDate(row: Sub | any) {
 
 .content-card :deep(.el-table) {
   overflow: hidden;
-  border: 1px solid #edf2f7;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
 }
 
 .content-card :deep(.el-table th.el-table__cell) {
-  background: #f8fafc;
-  color: #475569;
+  background: var(--sx-page);
+  color: var(--sx-muted);
 }
 
 .content-card :deep(.el-table__expand-icon) {
@@ -1007,15 +1149,15 @@ function formatDate(row: Sub | any) {
 
 .content-card :deep(.el-table__expanded-cell) {
   padding: 0 !important;
-  background: #f8fafc;
+  background: var(--sx-page);
 }
 
 .expanded-node-panel {
   margin: 12px 18px 18px;
   padding: 16px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
-  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  background: var(--sx-surface);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
@@ -1026,18 +1168,18 @@ function formatDate(row: Sub | any) {
   gap: 12px;
   padding-bottom: 12px;
   margin-bottom: 12px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--sx-border);
 }
 
 .expanded-node-header strong {
   display: block;
   margin-bottom: 3px;
-  color: #111827;
+  color: var(--sx-text);
   font-size: 15px;
 }
 
 .expanded-node-header span {
-  color: #64748b;
+  color: var(--sx-muted);
   font-size: 13px;
 }
 
@@ -1055,9 +1197,9 @@ function formatDate(row: Sub | any) {
   min-height: 44px;
   padding: 9px 12px;
   cursor: grab;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--sx-surface);
   transition:
     border-color 0.16s ease,
     box-shadow 0.16s ease,
@@ -1081,7 +1223,7 @@ function formatDate(row: Sub | any) {
 .token-line {
   max-width: 260px;
   overflow: hidden;
-  color: #64748b;
+  color: var(--sx-muted);
   font-family:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     monospace;
@@ -1115,9 +1257,9 @@ function formatDate(row: Sub | any) {
   gap: 12px;
   align-items: center;
   padding: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
-  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  background: var(--sx-surface);
 }
 
 .source-picker-main {
@@ -1127,7 +1269,7 @@ function formatDate(row: Sub | any) {
 .source-picker-main strong {
   display: block;
   overflow: hidden;
-  color: #111827;
+  color: var(--sx-text);
   font-size: 14px;
   font-weight: 500;
   text-overflow: ellipsis;
@@ -1137,7 +1279,7 @@ function formatDate(row: Sub | any) {
 .source-picker-main span {
   display: block;
   margin-top: 3px;
-  color: #64748b;
+  color: var(--sx-muted);
   font-size: 13px;
 }
 
@@ -1156,7 +1298,7 @@ function formatDate(row: Sub | any) {
 .sort-helper {
   width: 100%;
   margin: -2px 0 10px;
-  color: #64748b;
+  color: var(--sx-muted);
   font-size: 13px;
 }
 
@@ -1167,8 +1309,8 @@ function formatDate(row: Sub | any) {
   padding: 8px 12px;
   margin-bottom: 8px;
   cursor: grab;
-  background: rgba(248, 250, 252, 0.86);
-  border: 1px solid #e5e7eb;
+  background: var(--sx-page);
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
   transition:
     border-color 0.16s ease,
@@ -1185,7 +1327,7 @@ function formatDate(row: Sub | any) {
 
 .drag-handle {
   flex: 0 0 auto;
-  color: #94a3b8;
+  color: var(--sx-muted);
   cursor: grab;
   font-size: 18px;
 }
@@ -1197,8 +1339,8 @@ function formatDate(row: Sub | any) {
   width: 24px;
   height: 24px;
   font-size: 12px;
-  color: #475569;
-  background: #e2e8f0;
+  color: var(--sx-muted);
+  background: var(--sx-border);
   border-radius: 8px;
 }
 
@@ -1210,7 +1352,7 @@ function formatDate(row: Sub | any) {
 .node-title {
   min-width: 0;
   overflow: hidden;
-  color: #111827;
+  color: var(--sx-text);
   font-weight: 400;
   font-size: 14px;
   text-overflow: ellipsis;
@@ -1227,7 +1369,7 @@ function formatDate(row: Sub | any) {
 }
 
 .empty-text {
-  color: #94a3b8;
+  color: var(--sx-muted);
 }
 
 .client-list {
@@ -1241,7 +1383,7 @@ function formatDate(row: Sub | any) {
   justify-content: space-between;
   gap: 16px;
   padding: 14px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
   background: rgba(248, 250, 252, 0.72);
 }
@@ -1276,12 +1418,12 @@ function formatDate(row: Sub | any) {
 .selection-count {
   display: inline-block;
   margin-left: 8px;
-  color: #4f46e5;
+  color: var(--el-color-primary);
   font-size: 13px;
   font-weight: 400;
 }
 .source-picker-card.is-selected {
-  border-color: #c7d2fe;
+  border-color: var(--sx-border);
   background: var(--sx-accent-soft);
 }
 .selected-nodes-heading {

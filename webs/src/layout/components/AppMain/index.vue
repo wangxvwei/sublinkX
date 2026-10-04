@@ -2,10 +2,7 @@
   <section class="app-main">
     <router-view>
       <template #default="{ Component, route }">
-        <transition
-          enter-active-class="animate__animated animate__fadeIn"
-          mode="out-in"
-        >
+        <transition name="workspace" mode="out-in">
           <keep-alive :include="cachedViews">
             <component :is="Component" :key="route.path" />
           </keep-alive>
@@ -22,6 +19,20 @@ const cachedViews = computed(() => useTagsViewStore().cachedViews); // 缓存页
 </script>
 
 <style lang="scss" scoped>
+.workspace-enter-active,
+.workspace-leave-active {
+  transition: opacity 0.12s ease;
+}
+.workspace-enter-from,
+.workspace-leave-to {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-enter-active,
+  .workspace-leave-active {
+    transition: none;
+  }
+}
 .app-main {
   position: relative;
   width: 100%;

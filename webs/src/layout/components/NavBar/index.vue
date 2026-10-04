@@ -13,8 +13,8 @@
   @apply flex-x-between;
 
   height: $navbar-height;
-  background: var(--el-bg-color);
+  background: var(--sx-page);
   border-bottom: 1px solid var(--sx-border);
-  padding-right: 14px;
+  padding-right: 20px;
 }
 </style>

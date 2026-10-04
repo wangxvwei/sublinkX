@@ -150,6 +150,7 @@ const currentTableData = computed(() => {
   <div class="templates-page">
     <section class="page-header">
       <div>
+        <span class="page-kicker">OUTPUT / 客户端输出</span>
         <h2>输出模板</h2>
         <p>
           管理客户端的分流规则和代理组，在编辑订阅的「高级设置」中选择使用。

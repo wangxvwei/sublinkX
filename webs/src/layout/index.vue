@@ -79,6 +79,13 @@ const classObj = computed(() => ({
 }));
 
 const width = useWindowSize().width;
+const currentRoute = useRoute();
+watch(
+  () => currentRoute.path,
+  () => {
+    if (appStore.device === DeviceEnum.MOBILE) appStore.closeSideBar();
+  }
+);
 const WIDTH = 992; // 响应式布局容器固定宽度  大屏（>=1200px） 中屏（>=992px） 小屏（>=768px）
 
 watchEffect(() => {
@@ -124,8 +131,8 @@ function toggleSidebar() {
   width: $sidebar-width;
   height: 100%;
   overflow: hidden;
-  border-right: 1px solid #e5e7eb;
-  background: var(--sx-surface);
+  border-right: 1px solid #25483e;
+  background: #12382e;
   transition: width 0.28s;
 
   :deep(.el-menu) {
@@ -143,11 +150,11 @@ function toggleSidebar() {
     :deep(.el-menu-item),
     :deep(.el-sub-menu__title) {
       height: 46px;
-      margin: 6px 10px;
+      margin: 4px 14px;
       padding-right: 14px;
       border: 1px solid transparent;
       border-radius: 8px;
-      color: var(--sx-muted) !important;
+      color: #b2c9c0 !important;
       font-size: 14px;
       font-weight: 400;
       line-height: 46px;
@@ -161,25 +168,25 @@ function toggleSidebar() {
 
     :deep(.el-menu-item:hover),
     :deep(.el-sub-menu__title:hover) {
-      border-color: #e5e7eb;
-      background: rgba(255, 255, 255, 0.78) !important;
-      color: #2563eb !important;
+      border-color: transparent;
+      background: #204c3f !important;
+      color: #f0faf4 !important;
     }
 
     :deep(.el-menu-item.is-active) {
       border-color: transparent;
-      background: var(--sx-accent-soft) !important;
-      color: #4f46e5 !important;
+      background: #c2edcf !important;
+      color: #143b2f !important;
       font-weight: 500;
     }
 
     :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
-      color: #2563eb !important;
+      color: #c2edcf !important;
       font-weight: 500;
     }
 
     :deep(.el-sub-menu .el-menu) {
-      margin: 2px 10px 8px;
+      margin: 2px 6px 8px;
       padding: 4px 0;
       border: none;
       border-radius: 8px;
@@ -190,6 +197,13 @@ function toggleSidebar() {
       height: 40px;
       margin: 4px 8px;
       line-height: 40px;
+    }
+    :deep(.el-sub-menu .el-sub-menu__title) {
+      height: 40px;
+      line-height: 40px;
+    }
+    :deep(.el-sub-menu .el-sub-menu .el-menu-item) {
+      font-size: 13px;
     }
 
     :deep(.sub-el-icon),

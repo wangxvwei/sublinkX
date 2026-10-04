@@ -4,6 +4,9 @@ declare module "vue-router" {
   // https://router.vuejs.org/zh/guide/advanced/meta.html#typescript
   // 可以通过扩展 RouteMeta 接口来输入 meta 字段
   interface RouteMeta {
+    alwaysShow?: boolean;
+    workspaceView?: "nodes" | "api" | "ssh";
+    settingsSection?: "account" | "update";
     /** 菜单名称 */
     title?: string;
     /** 菜单图标  */

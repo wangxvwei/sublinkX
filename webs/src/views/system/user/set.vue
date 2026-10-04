@@ -12,6 +12,8 @@ import {
 } from "@/api/system/update";
 
 const userStore = useUserStore();
+const route = useRoute();
+const isAccountPage = computed(() => route.meta.settingsSection === "account");
 const userinfo = ref<any>();
 const saving = ref(false);
 const checking = ref(false);
@@ -35,22 +37,31 @@ const updateStatusVisible = computed(
   () => updateStatus.value && updateStatus.value.status !== "idle"
 );
 
-const updateStatusClass = computed(() => `is-${updateStatus.value?.status || "idle"}`);
+const updateStatusClass = computed(
+  () => `is-${updateStatus.value?.status || "idle"}`
+);
 
 const updateStatusMeta = computed(() => {
   if (!updateStatus.value) return "";
   const items = [
-    updateStatus.value.targetImage ? `目标镜像：${updateStatus.value.targetImage}` : "",
-    updateStatus.value.finishedAt ? `完成时间：${formatDate(updateStatus.value.finishedAt)}` : "",
+    updateStatus.value.targetImage
+      ? `目标镜像：${updateStatus.value.targetImage}`
+      : "",
+    updateStatus.value.finishedAt
+      ? `完成时间：${formatDate(updateStatus.value.finishedAt)}`
+      : "",
   ].filter(Boolean);
   return items.join(" · ");
 });
 
 onMounted(async () => {
-  userinfo.value = await userStore.getUserInfo();
-  form.username = userinfo.value?.username ?? "";
-  await loadUpdateInfo();
-  await loadUpdateStatus(false);
+  if (isAccountPage.value) {
+    userinfo.value = await userStore.getUserInfo();
+    form.username = userinfo.value?.username ?? "";
+  } else {
+    await loadUpdateInfo();
+    await loadUpdateStatus(false);
+  }
 });
 
 onUnmounted(() => {
@@ -67,11 +78,15 @@ async function resetPassword() {
     return;
   }
 
-  await ElMessageBox.confirm("确定修改管理员账号和密码吗？修改后需要重新登录。", "修改账号", {
-    confirmButtonText: "确认修改",
-    cancelButtonText: "取消",
-    type: "warning",
-  });
+  await ElMessageBox.confirm(
+    "确定修改管理员账号和密码吗？修改后需要重新登录。",
+    "修改账号",
+    {
+      confirmButtonText: "确认修改",
+      cancelButtonText: "取消",
+      type: "warning",
+    }
+  );
 
   saving.value = true;
   try {
@@ -97,7 +112,9 @@ async function loadUpdateInfo(showToast = false) {
       } else if (data.hasUpdate) {
         ElMessage.warning(`发现新版本：${data.latestVersion}`);
       } else {
-        ElMessage.success(`当前已是最新版本：${data.currentVersion || data.latestVersion}`);
+        ElMessage.success(
+          `当前已是最新版本：${data.currentVersion || data.latestVersion}`
+        );
       }
     }
   } finally {
@@ -139,7 +156,9 @@ async function copyCommand() {
 
 async function startOneClickUpdate() {
   if (!updateInfo.value?.autoUpdate) {
-    ElMessage.warning(updateInfo.value?.autoUpdateMessage || "当前容器还没有启用一键更新");
+    ElMessage.warning(
+      updateInfo.value?.autoUpdateMessage || "当前容器还没有启用一键更新"
+    );
     return;
   }
 
@@ -221,15 +240,27 @@ function formatDate(value?: string) {
   <div class="settings-page">
     <section class="settings-hero">
       <div>
-        <span>系统设置</span>
-        <h1>账号与版本维护</h1>
-        <p>这里可以修改管理员登录信息，也可以检查 Docker 镜像是否有新版本。</p>
+        <span class="page-kicker">SYSTEM / 系统管理</span>
+        <h1>{{ isAccountPage ? "账号与安全" : "版本更新" }}</h1>
+        <p>
+          {{
+            isAccountPage
+              ? "管理登录凭据，保护你的节点、来源和订阅配置。"
+              : "检查正式镜像，在网页确认后更新；当前配置和订阅数据会保留。"
+          }}
+        </p>
       </div>
-      <el-button :icon="Refresh" @click="loadUpdateInfo(true)" :loading="checking">检查更新</el-button>
+      <el-button
+        v-if="!isAccountPage"
+        :icon="Refresh"
+        @click="loadUpdateInfo(true)"
+        :loading="checking"
+        >检查更新</el-button
+      >
     </section>
 
-    <section class="settings-grid">
-      <div class="panel">
+    <section class="settings-grid" :class="{ 'account-grid': isAccountPage }">
+      <div v-if="isAccountPage" class="panel">
         <div class="panel-head">
           <div class="panel-icon user">
             <el-icon><User /></el-icon>
@@ -253,20 +284,44 @@ function formatDate(value?: string) {
             <el-input v-model="form.username" placeholder="请输入新账号" />
           </el-form-item>
           <el-form-item label="新密码">
-            <el-input v-model="form.password" type="password" show-password placeholder="至少 6 位" />
+            <el-input
+              v-model="form.password"
+              type="password"
+              show-password
+              placeholder="至少 6 位"
+            />
           </el-form-item>
-          <el-button type="primary" :loading="saving" @click="resetPassword">保存账号</el-button>
+          <el-button type="primary" :loading="saving" @click="resetPassword"
+            >保存账号</el-button
+          >
         </el-form>
       </div>
 
-      <div class="panel">
+      <aside v-if="isAccountPage" class="account-notes">
+        <span class="page-kicker">SECURITY NOTES</span>
+        <h2>一次修改，重新登录</h2>
+        <p>
+          保存会同时更新管理员账号和密码，当前会话将退出。请先确认新账号没有拼写错误。
+        </p>
+        <div>
+          <strong>密码建议</strong>
+          <p>使用至少 12 位的独立密码，不要与 VPS、面板或其他服务共用。</p>
+        </div>
+        <div>
+          <strong>来源凭据不受影响</strong>
+          <p>
+            这里修改的是 sublinkX 登录信息，不是来源的 SSH 密码或 API Token。
+          </p>
+        </div>
+      </aside>
+      <div v-else class="panel update-panel">
         <div class="panel-head">
           <div class="panel-icon update">
             <el-icon><Check /></el-icon>
           </div>
           <div>
             <h2>版本更新</h2>
-            <p>NAS / Docker 部署建议通过拉取新镜像更新。</p>
+            <p>源码修改 → 测试构建 → 发布镜像 → 在这里确认更新</p>
           </div>
         </div>
 
@@ -289,7 +344,9 @@ function formatDate(value?: string) {
           </div>
           <div>
             <span>网页一键更新</span>
-            <strong :class="updateInfo.autoUpdate ? 'status-ok' : 'status-warn'">
+            <strong
+              :class="updateInfo.autoUpdate ? 'status-ok' : 'status-warn'"
+            >
               {{ updateInfo.autoUpdate ? "已启用" : "未启用" }}
             </strong>
           </div>
@@ -304,7 +361,11 @@ function formatDate(value?: string) {
           class="update-tip"
         />
 
-        <div v-if="updateStatusVisible" class="update-status-card" :class="updateStatusClass">
+        <div
+          v-if="updateStatusVisible"
+          class="update-status-card"
+          :class="updateStatusClass"
+        >
           <strong>{{ updateStatus?.message }}</strong>
           <span v-if="updateStatusMeta">{{ updateStatusMeta }}</span>
           <small v-if="updateStatus?.error">{{ updateStatus.error }}</small>
@@ -312,11 +373,18 @@ function formatDate(value?: string) {
 
         <div class="command-box" v-if="updateInfo?.updateCommand">
           <code>{{ updateInfo.updateCommand }}</code>
-          <el-button :icon="CopyDocument" @click="copyCommand">复制命令</el-button>
+          <el-button :icon="CopyDocument" @click="copyCommand"
+            >复制命令</el-button
+          >
         </div>
 
         <div class="update-actions">
-          <el-button :icon="Refresh" :loading="checking" @click="loadUpdateInfo(true)">重新检查</el-button>
+          <el-button
+            :icon="Refresh"
+            :loading="checking"
+            @click="loadUpdateInfo(true)"
+            >重新检查</el-button
+          >
           <el-button
             type="success"
             :icon="Refresh"
@@ -345,15 +413,19 @@ function formatDate(value?: string) {
 .settings-page {
   min-height: 100%;
   padding: 20px;
-  color: #1f2937;
+  color: var(--sx-text);
   background:
-    linear-gradient(180deg, rgba(240, 249, 255, 0.95), rgba(248, 250, 252, 0.45) 260px),
+    linear-gradient(
+      180deg,
+      rgba(240, 249, 255, 0.95),
+      rgba(248, 250, 252, 0.45) 260px
+    ),
     #f6f8fb;
 }
 
 .settings-hero,
 .panel {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
@@ -385,13 +457,36 @@ function formatDate(value?: string) {
 .profile-line span,
 .version-list span {
   margin: 0;
-  color: #64748b;
+  color: var(--sx-muted);
 }
 
 .settings-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
+}
+.account-grid {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+}
+.account-notes {
+  padding: 28px;
+  color: var(--sx-text);
+}
+.account-notes h2 {
+  margin: 12px 0;
+  font-size: 24px;
+}
+.account-notes p {
+  color: var(--sx-muted);
+  line-height: 1.8;
+}
+.account-notes div {
+  padding-top: 24px;
+  border-top: 1px solid var(--sx-border);
+  margin-top: 24px;
+}
+.update-panel {
+  max-width: 960px;
 }
 
 .panel {
@@ -437,13 +532,13 @@ function formatDate(value?: string) {
   padding: 12px;
   margin-bottom: 16px;
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--sx-page);
 }
 
 .profile-line strong,
 .version-list strong {
   display: block;
-  color: #111827;
+  color: var(--sx-text);
 }
 
 .version-list .status-ok {
@@ -485,7 +580,7 @@ function formatDate(value?: string) {
 
 .update-status-card span,
 .update-status-card small {
-  color: #64748b;
+  color: var(--sx-muted);
   line-height: 1.6;
 }
 
@@ -512,7 +607,7 @@ function formatDate(value?: string) {
   justify-content: space-between;
   gap: 12px;
   padding: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--sx-border);
   border-radius: 8px;
   background: #0f172a;
 }
@@ -520,8 +615,10 @@ function formatDate(value?: string) {
 .command-box code {
   min-width: 0;
   overflow-wrap: anywhere;
-  color: #e2e8f0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  color: var(--sx-border);
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    monospace;
   font-size: 12px;
 }
 

@@ -4,7 +4,7 @@
   </el-icon>
   <svg-icon v-else-if="icon" :icon-class="icon" />
   <svg-icon v-else icon-class="menu" />
-  <span v-if="title" class="ml-1">{{ translateRouteTitle(title) }}</span>
+  <span v-if="title" class="menu-title">{{ translateRouteTitle(title) }}</span>
 </template>
 
 <script setup lang="ts">
@@ -28,6 +28,9 @@ defineProps({
   margin-right: 0 !important;
   font-size: 14px !important;
   color: currentcolor;
+}
+.menu-title {
+  margin-left: 10px;
 }
 
 .hideSidebar {
