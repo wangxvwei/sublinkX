@@ -251,6 +251,7 @@ onMounted(() => {
 <style lang="scss" scoped>
 .login-container {
   display: grid;
+  width: 100%;
   grid-template-rows: auto 1fr auto;
   min-height: 100vh;
   min-height: 100dvh;
