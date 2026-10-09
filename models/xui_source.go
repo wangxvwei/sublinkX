@@ -478,7 +478,15 @@ func xuiRewriteRuleMatches(rule xuiNodeRewriteRule, node XUINodeLink, parsed *ur
 	if rule.NameContains != "" && !strings.Contains(strings.ToLower(node.Name), strings.ToLower(rule.NameContains)) {
 		return false
 	}
-	if rule.Protocol != "" && !strings.EqualFold(parsed.Scheme, rule.Protocol) {
+	protocol := strings.ToLower(strings.TrimSpace(rule.Protocol))
+	scheme := strings.ToLower(parsed.Scheme)
+	if protocol == "hysteria2" {
+		protocol = "hy2"
+	}
+	if scheme == "hysteria2" {
+		scheme = "hy2"
+	}
+	if protocol != "" && scheme != protocol {
 		return false
 	}
 	if rule.Transport != "" {

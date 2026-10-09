@@ -276,14 +276,14 @@ function createRewriteRule(): XUIRewriteRuleRow {
   return {
     nameContains: "",
     protocol: "",
-    transport: "xhttp",
+    transport: "",
     address: "",
     port: "",
-    security: "tls",
+    security: "",
     sni: "",
     host: "",
-    fingerprint: "chrome",
-    alpn: ["h2", "http/1.1"],
+    fingerprint: "",
+    alpn: [],
     path: "",
     flow: "",
   };
@@ -681,7 +681,10 @@ function parseRewriteRules(raw: string) {
     rewriteRuleRows.value = rules.map((rule: any) => ({
       ...createRewriteRule(),
       nameContains: rule.nameContains || "",
-      protocol: rule.protocol || "",
+      protocol:
+        rule.protocol?.toLowerCase() === "hysteria2"
+          ? "hy2"
+          : rule.protocol || "",
       transport: rule.transport || "",
       address: rule.address || "",
       port: rule.port || "",
@@ -1278,6 +1281,7 @@ function formatSyncResult(result?: SyncResult) {
                         <el-option label="VLESS" value="vless" />
                         <el-option label="VMess" value="vmess" />
                         <el-option label="Trojan" value="trojan" />
+                        <el-option label="Hysteria2（HY2）" value="hy2" />
                       </el-select>
                       <p class="field-help">
                         只匹配已有协议，不会把节点转换为其他协议。
@@ -1295,7 +1299,7 @@ function formatSyncResult(result?: SyncResult) {
                         <el-option label="gRPC" value="grpc" />
                       </el-select>
                       <p class="field-help">
-                        只对符合此传输方式的节点生效，不选则不限。
+                        只对符合此传输方式的节点生效，不选则不限。HY2 请留空。
                       </p>
                     </el-form-item>
                     <el-form-item label="连接地址">
@@ -1353,14 +1357,17 @@ function formatSyncResult(result?: SyncResult) {
                       <el-select
                         v-model="rule.alpn"
                         multiple
+                        clearable
                         collapse-tags
                         placeholder="不改"
                       >
+                        <el-option label="h3" value="h3" />
                         <el-option label="h2" value="h2" />
                         <el-option label="http/1.1" value="http/1.1" />
                       </el-select>
                       <p class="field-help">
-                        协商 HTTP/2（h2）或 HTTP/1.1，按服务端要求选择。
+                        HY2 通常使用
+                        h3；其他协议按服务端要求选择。留空保持原值。
                       </p>
                     </el-form-item>
                     <el-form-item label="Path · 请求路径">
