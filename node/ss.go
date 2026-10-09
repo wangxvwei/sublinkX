@@ -3,6 +3,7 @@ package node
 import (
 	"fmt"
 	"log"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -43,6 +44,9 @@ func parsingSS(s string) (string, string, string) {
 		raw := s[5:]
 		s = "ss://" + Base64Decode(raw)
 		u, err = url.Parse(s)
+		if err != nil || u.User == nil {
+			return "", "", ""
+		}
 	}
 	var auth, addr, name string
 	auth = u.User.String()
@@ -93,11 +97,15 @@ func DecodeSSURL(s string) (Ss, error) {
 		return Ss{}, fmt.Errorf("invalid SS URL")
 	}
 	// 解析参数
-	parts := strings.Split(addr, ":")
-	port, _ := strconv.Atoi(parts[len(parts)-1])
-	server := strings.Replace(ValRetIPv6Addr(addr), ":"+parts[len(parts)-1], "", -1)
-	cipher := strings.Split(param, ":")[0]
-	password := strings.Replace(param, cipher+":", "", 1)
+	server, rawPort, err := net.SplitHostPort(addr)
+	if err != nil {
+		return Ss{}, fmt.Errorf("invalid SS address: %w", err)
+	}
+	port, err := strconv.Atoi(rawPort)
+	cipher, password, ok := strings.Cut(param, ":")
+	if err != nil || port < 1 || port > 65535 || server == "" || !ok || cipher == "" || password == "" {
+		return Ss{}, fmt.Errorf("invalid SS server, port or credentials")
+	}
 	// 如果没有备注则使用服务器加端口命名
 	if name == "" {
 		name = addr

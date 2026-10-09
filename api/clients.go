@@ -288,7 +288,7 @@ func fetchRemoteSubscription(link string) (string, error) {
 
 func splitLinks(raw string) []string {
 	fields := strings.FieldsFunc(raw, func(r rune) bool {
-		return r == '\n' || r == '\r' || r == ','
+		return r == '\n' || r == '\r'
 	})
 	links := make([]string, 0, len(fields))
 	for _, field := range fields {

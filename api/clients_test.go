@@ -2,11 +2,21 @@ package api
 
 import (
 	"net/url"
+	"reflect"
 	"testing"
 
 	"sublink/models"
 	"sublink/node"
 )
+
+func TestSplitLinksPreservesCommasInNodeParameters(t *testing.T) {
+	first := "vless://id@example.com:443?alpn=h2,http/1.1#name,with,commas"
+	second := "trojan://password@example.com:443#second"
+	got := splitLinks(first + "\r\n" + second + "\n")
+	if !reflect.DeepEqual(got, []string{first, second}) {
+		t.Fatalf("splitLinks changed node links: %q", got)
+	}
+}
 
 func TestCollectNodeLinksRewritesURLFragment(t *testing.T) {
 	links, err := collectNodeLinks([]models.Node{{

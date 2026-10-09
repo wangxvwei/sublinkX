@@ -77,6 +77,9 @@ func convertToInt(value interface{}) (int, error) {
 	case int:
 		return v, nil
 	case float64:
+		if float64(int(v)) != v {
+			return 0, fmt.Errorf("expected integer, got %v", v)
+		}
 		return int(v), nil
 	case string:
 		return strconv.Atoi(v)
@@ -119,6 +122,7 @@ func EncodeClash(urls []string, sqlconfig SqlConfig) ([]byte, error) {
 			ssr, err := DecodeSSRURL(link)
 			if err != nil {
 				log.Println(err)
+				continue
 			}
 			// 如果没有名字，就用服务器地址作为名字
 			if ssr.Qurey.Remarks == "" {
@@ -195,18 +199,25 @@ func EncodeClash(urls []string, sqlconfig SqlConfig) ([]byte, error) {
 			port, _ := convertToInt(vmess.Port)
 			aid, _ := convertToInt(vmess.Aid)
 			vmessproxy := Proxy{
-				Name:             vmess.Ps,
-				Type:             "vmess",
-				Server:           vmess.Add,
-				Port:             port,
-				Cipher:           vmess.Scy,
-				Uuid:             vmess.Id,
-				AlterId:          strconv.Itoa(aid),
-				Network:          vmess.Net,
-				Tls:              tls,
-				Ws_opts:          ws_opts,
-				Udp:              sqlconfig.Udp,
-				Skip_cert_verify: sqlconfig.Cert,
+				Name:               vmess.Ps,
+				Type:               "vmess",
+				Server:             vmess.Add,
+				Port:               port,
+				Cipher:             vmess.Scy,
+				Uuid:               vmess.Id,
+				AlterId:            strconv.Itoa(aid),
+				Network:            vmess.Net,
+				Tls:                tls,
+				Servername:         vmess.Sni,
+				Client_fingerprint: vmess.Fp,
+				Udp:                sqlconfig.Udp,
+				Skip_cert_verify:   sqlconfig.Cert,
+			}
+			if vmess.Net == "ws" {
+				vmessproxy.Ws_opts = ws_opts
+			}
+			if vmess.Alpn != "" {
+				vmessproxy.Alpn = strings.Split(vmess.Alpn, ",")
 			}
 			proxys = append(proxys, vmessproxy)
 		case Scheme == "vless":
@@ -228,6 +239,9 @@ func EncodeClash(urls []string, sqlconfig SqlConfig) ([]byte, error) {
 			reality_opts := map[string]interface{}{
 				"public-key": vless.Query.Pbk,
 				"short-id":   vless.Query.Sid,
+			}
+			if vless.Query.Security == "reality" && vless.Query.Pbk != "" && vless.Query.SupportX25519MLKEM768 != nil {
+				reality_opts["support-x25519mlkem768"] = *vless.Query.SupportX25519MLKEM768
 			}
 			grpc_opts := map[string]interface{}{
 				"grpc-mode":         "gun",
@@ -411,7 +425,10 @@ func DecodeClash(proxys []Proxy, yamlfile string) ([]byte, error) {
 	config["proxies"] = proxies
 	// 往ProxyGroup中插入代理列表
 	// ProxiesNameList := []string{"newProxy", "ceshi"}
-	proxyGroups := config["proxy-groups"].([]interface{})
+	proxyGroups, ok := config["proxy-groups"].([]interface{})
+	if !ok && config["proxy-groups"] != nil {
+		return nil, fmt.Errorf("proxy-groups must be a list")
+	}
 	for i, pg := range proxyGroups {
 		proxyGroup, ok := pg.(map[string]interface{})
 		if !ok {
@@ -424,11 +441,15 @@ func DecodeClash(proxys []Proxy, yamlfile string) ([]byte, error) {
 		// 如果为链式代理的话则不插入返回
 		// log.Print("代理类型为:", proxyGroup["type"])
 		if proxyGroup["type"] == "relay" {
-			break
+			continue
 		}
 		// 清除 nil 值
 		var validProxies []interface{}
-		for _, p := range proxyGroup["proxies"].([]interface{}) {
+		groupProxies, ok := proxyGroup["proxies"].([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("proxy group %v: proxies must be a list", proxyGroup["name"])
+		}
+		for _, p := range groupProxies {
 			if p != nil {
 				validProxies = append(validProxies, p)
 			}
@@ -441,7 +462,9 @@ func DecodeClash(proxys []Proxy, yamlfile string) ([]byte, error) {
 		proxyGroups[i] = proxyGroup
 	}
 
-	config["proxy-groups"] = proxyGroups
+	if proxyGroups != nil {
+		config["proxy-groups"] = proxyGroups
+	}
 
 	// 将修改后的内容写回文件
 	newData, err := yaml.Marshal(config)

@@ -78,7 +78,10 @@ func DecodeSSRURL(s string) (Ssr, error) {
 				paramMap[parts[0]] = parts[1]
 			}
 		} else {
-			q := strings.Split(query, "=")
+			q := strings.SplitN(query, "=", 2)
+			if len(q) != 2 {
+				return Ssr{}, errors.New("invalid SSR query")
+			}
 			paramMap[q[0]] = q[1]
 		}
 		remarks = Base64Decode(paramMap["remarks"])
@@ -99,8 +102,11 @@ func DecodeSSRURL(s string) (Ssr, error) {
 	obfs := param[len(param)-2]
 	method := param[len(param)-3]
 	protocol := param[len(param)-4]
-	port, _ := strconv.Atoi(param[len(param)-5])
-	server := ValRetIPv6Addr(param[len(param)-6])
+	port, err := strconv.Atoi(param[len(param)-5])
+	server := ValRetIPv6Addr(strings.Join(param[:len(param)-5], ":"))
+	if err != nil || port < 1 || port > 65535 || server == "" {
+		return Ssr{}, errors.New("invalid SSR server or port")
+	}
 	// 如果没有备注默认使用服务器+端口作为备注
 	if remarks == "" {
 		remarks = server + ":" + strconv.Itoa(port)
@@ -119,7 +125,7 @@ func DecodeSSRURL(s string) (Ssr, error) {
 		Protocol: protocol,
 		Method:   method,
 		Obfs:     obfs,
-		Password: password,
+		Password: Base64Decode(password),
 		Qurey: Ssrquery{
 			Obfsparam: obfsparam,
 			Remarks:   remarks,

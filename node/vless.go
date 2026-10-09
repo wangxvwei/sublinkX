@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -15,20 +16,21 @@ type VLESS struct {
 	Query  VLESSQuery `json:"query"`
 }
 type VLESSQuery struct {
-	Security    string   `json:"security"`
-	Alpn        []string `json:"alpn"`
-	Sni         string   `json:"sni"`
-	Fp          string   `json:"fp"`
-	Sid         string   `json:"sid"`
-	Pbk         string   `json:"pbk"`
-	Flow        string   `json:"flow"`
-	Encryption  string   `json:"encryption"`
-	Type        string   `json:"type"`
-	HeaderType  string   `json:"headerType"`
-	Path        string   `json:"path"`
-	Host        string   `json:"host"`
-	ServiceName string   `json:"serviceName,omitempty"`
-	Mode        string   `json:"mode,omitempty"`
+	Security              string   `json:"security"`
+	Alpn                  []string `json:"alpn"`
+	Sni                   string   `json:"sni"`
+	Fp                    string   `json:"fp"`
+	Sid                   string   `json:"sid"`
+	Pbk                   string   `json:"pbk"`
+	Flow                  string   `json:"flow"`
+	Encryption            string   `json:"encryption"`
+	Type                  string   `json:"type"`
+	HeaderType            string   `json:"headerType"`
+	Path                  string   `json:"path"`
+	Host                  string   `json:"host"`
+	ServiceName           string   `json:"serviceName,omitempty"`
+	Mode                  string   `json:"mode,omitempty"`
+	SupportX25519MLKEM768 *bool    `json:"support-x25519mlkem768,omitempty"`
 }
 
 func CallVLESS() {
@@ -63,11 +65,11 @@ func EncodeVLESSURL(v VLESS) string {
 	u := url.URL{
 		Scheme: "vless",
 		User:   url.User(v.Uuid),
-		Host:   fmt.Sprintf("%s:%d", v.Server, v.Port),
+		Host:   net.JoinHostPort(v.Server, strconv.Itoa(v.Port)),
 	}
 	q := u.Query()
 	q.Set("security", v.Query.Security)
-	// q.Set("alpn", v.Query.Alpn)
+	q.Set("alpn", strings.Join(v.Query.Alpn, ","))
 	q.Set("sni", v.Query.Sni)
 	q.Set("fp", v.Query.Fp)
 	q.Set("sid", v.Query.Sid)
@@ -78,6 +80,11 @@ func EncodeVLESSURL(v VLESS) string {
 	q.Set("headerType", v.Query.HeaderType)
 	q.Set("path", v.Query.Path)
 	q.Set("host", v.Query.Host)
+	q.Set("serviceName", v.Query.ServiceName)
+	q.Set("mode", v.Query.Mode)
+	if v.Query.SupportX25519MLKEM768 != nil {
+		q.Set("support-x25519mlkem768", strconv.FormatBool(*v.Query.SupportX25519MLKEM768))
+	}
 	u.Fragment = v.Name
 	// 检查query是否有空值，有的话删除
 	for k, v := range q {
@@ -88,8 +95,8 @@ func EncodeVLESSURL(v VLESS) string {
 	}
 	u.RawQuery = q.Encode()
 	// 如果没有name则用服务器加端口
-	if v.Name != "" {
-		u.Fragment = v.Server + ":" + strconv.Itoa(v.Port)
+	if v.Name == "" {
+		u.Fragment = u.Host
 	}
 	return u.String()
 }
@@ -100,10 +107,10 @@ func DecodeVLESSURL(s string) (VLESS, error) {
 		base64(username@host:port?encryption=none&security=auto&type=tcp)
 	*/
 	// 解析base64然后重新url编码
-	if !strings.Contains(s, "vless://") {
+	if !strings.HasPrefix(s, "vless://") {
 		return VLESS{}, fmt.Errorf("非vless协议: %s", s)
 	}
-	s = "vless://" + Base64Decode(strings.Split(s, "://")[1])
+	s = "vless://" + Base64Decode(strings.TrimPrefix(s, "vless://"))
 	// 解析url
 	u, err := url.Parse(s)
 	if err != nil {
@@ -111,7 +118,18 @@ func DecodeVLESSURL(s string) (VLESS, error) {
 	}
 	uuid := u.User.Username()
 	hostname := u.Hostname()
-	port, _ := strconv.Atoi(u.Port())
+	port, err := strconv.Atoi(u.Port())
+	if err != nil || port < 1 || port > 65535 || hostname == "" || uuid == "" {
+		return VLESS{}, fmt.Errorf("invalid VLESS server, port or UUID")
+	}
+	var supportX25519MLKEM768 *bool
+	if raw := u.Query().Get("support-x25519mlkem768"); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return VLESS{}, fmt.Errorf("invalid support-x25519mlkem768: %w", err)
+		}
+		supportX25519MLKEM768 = &value
+	}
 	encryption := u.Query().Get("encryption")
 	security := u.Query().Get("security")
 	types := u.Query().Get("type")
@@ -161,21 +179,21 @@ func DecodeVLESSURL(s string) (VLESS, error) {
 		Server: hostname,
 		Port:   port,
 		Query: VLESSQuery{
-			Security:    security,
-			Alpn:        alpn,
-			Sni:         sni,
-			Fp:          fp,
-			Sid:         sid,
-			Pbk:         pbk,
-			Flow:        flow,
-			Encryption:  encryption,
-			Type:        types,
-			HeaderType:  headerType,
-			Path:        path,
-			Host:        host,
-			ServiceName: serviceName,
-			Mode:        mode,
+			Security:              security,
+			Alpn:                  alpn,
+			Sni:                   sni,
+			Fp:                    fp,
+			Sid:                   sid,
+			Pbk:                   pbk,
+			Flow:                  flow,
+			Encryption:            encryption,
+			Type:                  types,
+			HeaderType:            headerType,
+			Path:                  path,
+			Host:                  host,
+			ServiceName:           serviceName,
+			Mode:                  mode,
+			SupportX25519MLKEM768: supportX25519MLKEM768,
 		},
 	}, nil
 }
-

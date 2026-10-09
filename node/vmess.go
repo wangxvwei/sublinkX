@@ -46,7 +46,7 @@ func CallVmessURL() {
 func EncodeVmessURL(v Vmess) string {
 	// 如果备注为空，则使用服务器地址+端口
 	if v.Ps == "" {
-		v.Ps = v.Add + ":" + v.Port.(string)
+		v.Ps = fmt.Sprintf("%s:%v", v.Add, v.Port)
 	}
 	// 如果版本为空，则默认为2
 	if v.V == "" {
@@ -58,10 +58,10 @@ func EncodeVmessURL(v Vmess) string {
 
 // vmess 解码
 func DecodeVMESSURL(s string) (Vmess, error) {
-	if !strings.Contains(s, "vmess://") {
+	if !strings.HasPrefix(s, "vmess://") {
 		return Vmess{}, fmt.Errorf("非vmess协议:%s", s)
 	}
-	param := strings.Split(s, "://")[1]
+	param := strings.TrimPrefix(s, "vmess://")
 	param = Base64Decode(strings.TrimSpace(param))
 	// fmt.Println(param)
 	var vmess Vmess
@@ -73,9 +73,16 @@ func DecodeVMESSURL(s string) (Vmess, error) {
 	if vmess.Scy == "" {
 		vmess.Scy = "auto"
 	}
+	port, err := convertToInt(vmess.Port)
+	if err != nil || port < 1 || port > 65535 || vmess.Add == "" || vmess.Id == "" {
+		return Vmess{}, fmt.Errorf("invalid VMess server, port or UUID")
+	}
+	if vmess.Aid == nil {
+		vmess.Aid = 0
+	}
 	// 如果备注为空，则使用服务器地址+端口
 	if vmess.Ps == "" {
-		vmess.Ps = vmess.Add + ":" + vmess.Port.(string)
+		vmess.Ps = fmt.Sprintf("%s:%d", vmess.Add, port)
 	}
 	if CheckEnvironment() {
 		fmt.Println("服务器地址", vmess.Add)
