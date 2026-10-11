@@ -1,6 +1,7 @@
 package node
 
 import (
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -21,6 +22,7 @@ type HY2 struct {
 	Sni          string
 	Obfs         string
 	ObfsPassword string
+	PinSHA256    string
 }
 
 // 开发者测试 CallHy 调用
@@ -57,6 +59,7 @@ func EncodeHY2URL(hy2 HY2) string {
 	q.Set("auth", hy2.Auth)
 	q.Set("upmbps", strconv.Itoa(hy2.UpMbps))
 	q.Set("downmbps", strconv.Itoa(hy2.DownMbps))
+	q.Set("pinSHA256", hy2.PinSHA256)
 	// q.Set("alpn", hy2.ALPN)
 	// 检查query是否有空值，有的话删除
 	for k, v := range q {
@@ -93,6 +96,15 @@ func DecodeHY2URL(s string) (HY2, error) {
 	sni := u.Query().Get("sni")
 	obfs := u.Query().Get("obfs")
 	obfsPassword := u.Query().Get("obfs-password")
+	pin := u.Query().Get("pinSHA256")
+	if pin != "" {
+		pin = strings.ReplaceAll(strings.TrimSpace(pin), ":", "")
+		digest, err := hex.DecodeString(pin)
+		if err != nil || len(digest) != 32 {
+			return HY2{}, fmt.Errorf("invalid HY2 pinSHA256: expected a SHA-256 certificate fingerprint")
+		}
+		pin = strings.ToLower(pin)
+	}
 	name := u.Fragment
 	// 如果没有设置 Name，则使用 Host:Port 作为 Fragment
 	if name == "" {
@@ -125,5 +137,6 @@ func DecodeHY2URL(s string) (HY2, error) {
 		Sni:          sni,
 		Obfs:         obfs,
 		ObfsPassword: obfsPassword,
+		PinSHA256:    pin,
 	}, nil
 }

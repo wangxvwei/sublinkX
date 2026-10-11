@@ -20,6 +20,7 @@ type Proxy struct {
 	Cipher             string                 `yaml:"cipher,omitempty"`
 	Password           string                 `yaml:"password,omitempty"`
 	Client_fingerprint string                 `yaml:"client-fingerprint,omitempty"`
+	Fingerprint        string                 `yaml:"fingerprint,omitempty"`
 	Tfo                bool                   `yaml:"tfo,omitempty"`
 	Udp                bool                   `yaml:"udp,omitempty"`
 	Skip_cert_verify   bool                   `yaml:"skip-cert-verify,omitempty"`
@@ -336,6 +337,7 @@ func EncodeClash(urls []string, sqlconfig SqlConfig) ([]byte, error) {
 				Obfs:             hy2.Obfs,
 				Password:         hy2.Password,
 				Obfs_password:    hy2.ObfsPassword,
+				Fingerprint:      hy2.PinSHA256,
 				Udp:              sqlconfig.Udp,
 				Skip_cert_verify: sqlconfig.Cert,
 			}
