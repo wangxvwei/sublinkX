@@ -227,7 +227,7 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
             <p v-if="network?.carrier">目标地区：{{ network.province || '未识别' }} · {{ carrierNames[network.carrier] }}<br />匹配范围：同运营商通用推荐（非省级实测）</p>
             <div v-if="network?.sources?.length" class="feed-statuses">
               <p>公开候选 {{ network.candidateCount || 0 }} 个 · 已积累 {{ network.historyWindows || 0 }} 个历史时段</p>
-              <div v-for="feed in network.sources" :key="feed.id" class="feed-status"><a :href="feed.url" target="_blank" rel="noopener noreferrer">{{ feed.name }}</a><el-tag :type="feed.error ? 'warning' : feed.count ? 'success' : 'info'" size="small">{{ feed.error ? '暂不可用' : `${feed.count} 个匹配地址` }}</el-tag><span>{{ feed.error || `上游更新：${date(feed.updatedAt)}` }}</span></div>
+              <div v-for="feed in network.sources" :key="feed.id" class="feed-status"><a :href="feed.url" target="_blank" rel="noopener noreferrer">{{ feed.name }}</a><el-tag :type="feed.error ? 'warning' : feed.count ? 'success' : 'info'" size="small">{{ feed.cached ? `缓存 · ${feed.count} 个地址` : feed.error ? '暂不可用' : `${feed.count} 个匹配地址` }}</el-tag><span>{{ feed.cached ? `请求失败，使用有效期内缓存；上游更新：${date(feed.updatedAt)}` : feed.error || `上游更新：${date(feed.updatedAt)}` }}</span></div>
               <span class="field-help">三个原始来源均经 BestCF 公开镜像读取。同源镜像不重复加分；来源失效时使用其余有效数据。</span>
               <span class="field-help">历史在生成推荐时积累，按上游更新时间的 30 分钟窗口去重，参考最近 7 天。首次或历史不足时主要按新鲜度和来源排序；不代表目标线路测速。</span>
             </div>

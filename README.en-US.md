@@ -109,6 +109,7 @@ You can enter a public IP from another province while running the application el
 Recommendations use the public UOUIN, WeTest, and CFYes feeds through BestCF mirrors. Provider identities are kept separate from mirror URLs, so mirrors of the same provider do not earn extra credit. A failed provider does not stop usable providers; the page shows each feed's timestamp, matching count, and errors.
 
 - **Freshness**: Data older than 48 hours, or with invalid timestamps, is excluded. Recent records rank higher.
+- **Outage fallback**: If a provider request fails, use its latest persisted snapshot only while it remains within 48 hours. Cached results are labeled with the original timestamp; expired cache is excluded.
 - **History**: Each recommendation run records public observations for the last seven days. Records are deduplicated by the provider timestamp's 30-minute window; refreshes, restarts, or another profile do not inflate history.
 - **Ranking and diversity**: Combine provider-relative rank, freshness, support from multiple providers, and historical consistency, with moderate IPv4 subnet diversity.
 - **Keep known-good IPs**: Mark a result to prioritize it in future runs, even when current public feeds omit it. Changing the target IP, ISP, template, or mode clears retention; copying a profile starts without retained IPs. The nodes saved to the library still follow the current selection.

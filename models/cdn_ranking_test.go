@@ -190,4 +190,27 @@ func TestCDNMultiSourceHistoryAndRetention(t *testing.T) {
 	if len(p.PinnedIPs) != 0 {
 		t.Fatal("retention leaked to a different target network")
 	}
+	// A network outage after a restart can use persisted fresh samples. Cached
+	// samples keep their original timestamp and cannot create additional history.
+	cdnFeedCache.Lock()
+	for _, feed := range cdnFeeds {
+		cdnFeedCache.Entries[feed.URL] = cdnCachedFeed{Err: errors.New("offline"), At: time.Now()}
+	}
+	cdnFeedCache.Unlock()
+	p.Network.Carrier = "CU"
+	must(db.Model(&CDNObservation{}).Count(&count).Error)
+	beforeCache := count
+	results, err = rankCDNRecommendations(context.Background(), &p, template, ranges, now)
+	must(err)
+	if len(results) == 0 || !results[0].Cached || !p.Network.Sources[0].Cached {
+		t.Fatal("persisted fresh cache was not used or labeled")
+	}
+	must(db.Model(&CDNObservation{}).Count(&count).Error)
+	if count != beforeCache {
+		t.Fatal("cache fallback inflated history")
+	}
+	must(db.Model(&CDNObservation{}).Where("1=1").Update("sample_at", now.Add(-49*time.Hour)).Error)
+	if _, err = rankCDNRecommendations(context.Background(), &p, template, ranges, now); err == nil {
+		t.Fatal("expired cache was used")
+	}
 }

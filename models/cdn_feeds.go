@@ -28,6 +28,7 @@ type CDNFeedStatus struct {
 	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
 	Count     int        `json:"count"`
 	Error     string     `json:"error,omitempty"`
+	Cached    bool       `json:"cached,omitempty"`
 }
 
 type cdnCandidate struct {
@@ -35,6 +36,7 @@ type cdnCandidate struct {
 	Port                int
 	UpdatedAt           time.Time
 	Quality             float64
+	Cached              bool
 }
 
 type cdnCachedFeed struct {

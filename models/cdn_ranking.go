@@ -48,17 +48,6 @@ func rankCDNRecommendations(ctx context.Context, p *CDNProfile, template node.CD
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	for i := range statuses {
-		for _, c := range candidates {
-			if c.Source == statuses[i].ID && c.Carrier == p.Network.Carrier && c.Port == template.Port && c.IP != p.SourceIP {
-				statuses[i].Count++
-			}
-		}
-		if statuses[i].Count > 0 && statuses[i].UpdatedAt != nil && (p.Network.SourceUpdatedAt == nil || statuses[i].UpdatedAt.After(*p.Network.SourceUpdatedAt)) {
-			p.Network.SourceUpdatedAt = statuses[i].UpdatedAt
-		}
-	}
-	p.Network.Sources = statuses
 	if err := saveCDNObservations(candidates, now); err != nil {
 		return nil, fmt.Errorf("保存公开推荐历史失败：%w", err)
 	}
@@ -66,6 +55,34 @@ func rankCDNRecommendations(ctx context.Context, p *CDNProfile, template node.CD
 	if err := DB.Where("carrier = ? AND port = ? AND window >= ?", p.Network.Carrier, template.Port, now.UTC().Truncate(30*time.Minute).Add(-7*24*time.Hour)).Find(&observations).Error; err != nil {
 		return nil, err
 	}
+	for i := range statuses {
+		s := &statuses[i]
+		if s.Error != "" {
+			latest := time.Time{}
+			for _, o := range observations {
+				if o.Source == s.ID && now.Sub(o.SampleAt) <= 48*time.Hour && !o.SampleAt.After(now.Add(5*time.Minute)) && o.SampleAt.After(latest) {
+					latest = o.SampleAt
+				}
+			}
+			if !latest.IsZero() {
+				s.Cached, s.UpdatedAt = true, &latest
+				for _, o := range observations {
+					if o.Source == s.ID && o.SampleAt.Equal(latest) {
+						candidates = append(candidates, cdnCandidate{IP: o.IP, Carrier: o.Carrier, Port: o.Port, Source: o.Source, UpdatedAt: o.SampleAt, Quality: o.Quality, Cached: true})
+					}
+				}
+			}
+		}
+		for _, c := range candidates {
+			if c.Source == s.ID && c.Carrier == p.Network.Carrier && c.Port == template.Port && c.IP != p.SourceIP {
+				s.Count++
+			}
+		}
+		if s.Count > 0 && s.UpdatedAt != nil && (p.Network.SourceUpdatedAt == nil || s.UpdatedAt.After(*p.Network.SourceUpdatedAt)) {
+			p.Network.SourceUpdatedAt = s.UpdatedAt
+		}
+	}
+	p.Network.Sources = statuses
 	return selectCDNRecommendations(p, template, ranges, candidates, observations, now)
 }
 
@@ -144,7 +161,12 @@ func selectCDNRecommendations(p *CDNProfile, template node.CDNTemplate, ranges [
 			if !ok {
 				continue
 			}
-			r.Result.Sources = append(r.Result.Sources, feed.Name)
+			name := feed.Name
+			if c.Cached {
+				name += "（缓存）"
+				r.Result.Cached = true
+			}
+			r.Result.Sources = append(r.Result.Sources, name)
 			if r.Result.SourceUpdatedAt == nil || c.UpdatedAt.After(*r.Result.SourceUpdatedAt) {
 				at := c.UpdatedAt
 				r.Result.SourceUpdatedAt = &at
@@ -165,6 +187,9 @@ func selectCDNRecommendations(p *CDNProfile, template node.CDNTemplate, ranges [
 		r.Score += math.Min(20, 10*math.Max(0, float64(len(r.BySource)-1))) + stability
 		r.Result.HistorySamples = len(windows)
 		r.Result.Basis = fmt.Sprintf("%d 个公开来源 · 历史 %d 期", len(r.BySource), len(windows))
+		if r.Result.Cached {
+			r.Result.Basis += " · 含新鲜缓存"
+		}
 		if len(r.BySource) == 0 {
 			r.Result.Basis = "用户保留 · 当前公开源未收录"
 		}

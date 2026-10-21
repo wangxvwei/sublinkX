@@ -40,6 +40,7 @@ type CDNResult struct {
 	SourceUpdatedAt *time.Time `json:"sourceUpdatedAt,omitempty"`
 	HistorySamples  int        `json:"historySamples,omitempty"`
 	Basis           string     `json:"basis,omitempty"`
+	Cached          bool       `json:"cached,omitempty"`
 }
 
 type CDNProfile struct {

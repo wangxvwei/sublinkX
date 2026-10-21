@@ -4,9 +4,9 @@ export interface CDNResult {
   ip: string; delay: number; loss: number; speed: number; colo: string;
   tlsOK: boolean; link: string; name: string;
   recommendation?: boolean;
-  pinned?: boolean; sources?: string[]; sourceUpdatedAt?: string; historySamples?: number; basis?: string;
+  pinned?: boolean; cached?: boolean; sources?: string[]; sourceUpdatedAt?: string; historySamples?: number; basis?: string;
 }
-export interface CDNFeedStatus { id: string; name: string; url: string; count: number; updatedAt?: string; error?: string }
+export interface CDNFeedStatus { id: string; name: string; url: string; count: number; updatedAt?: string; error?: string; cached?: boolean }
 export interface CDNProfile {
   id: number; name: string; templateLink: string; ips: string; count: number;
   candidateMode?: "recommend" | "manual"; sourceIP?: string; carrier?: string;
