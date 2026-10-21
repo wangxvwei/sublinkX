@@ -30,10 +30,11 @@ func InitSqlite() {
 		log.Println("数据库已经初始化，无需重复初始化")
 		return
 	}
-	err = db.AutoMigrate(&User{}, &Subcription{}, &SubLogs{}, &GroupNode{}, &Node{}, &XUISource{})
+	err = db.AutoMigrate(&User{}, &Subcription{}, &SubLogs{}, &GroupNode{}, &Node{}, &XUISource{}, &CDNProfile{})
 	if err != nil {
 		log.Println("数据表迁移失败")
 	}
+	db.Model(&CDNProfile{}).Where("status = ?", "running").Updates(map[string]interface{}{"status": "interrupted", "message": "服务重启，任务已中断，可重新开始优选"})
 	// 初始化用户数据
 	err = db.First(&User{}).Error
 	if err == gorm.ErrRecordNotFound {

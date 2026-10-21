@@ -8,6 +8,18 @@ RUN pnpm install --frozen-lockfile
 COPY webs/ ./
 RUN pnpm build
 
+FROM golang:1.22.2-alpine AS cfstbuilder
+
+WORKDIR /cfst
+# Pin the independent CLI and include its corresponding source and licenses.
+RUN wget -q -O /tmp/cfst.tar.gz https://codeload.github.com/XIU2/CloudflareSpeedTest/tar.gz/65b43aa58c5f9c7ab8ab83d2d27e35fc00d9cec4 \
+    && echo 'ad013a23c54d8c9f54984221fbc6f683fd1fd111575115892ed0dff19d7f1d32  /tmp/cfst.tar.gz' | sha256sum -c - \
+    && tar -xzf /tmp/cfst.tar.gz --strip-components=1 \
+    && go mod vendor \
+    && CGO_ENABLED=0 go build -mod=vendor -trimpath -ldflags="-s -w -X main.version=v2.3.5" -o /out/cfst . \
+    && cp LICENSE /out/LICENSE \
+    && tar -czf /out/source.tar.gz .
+
 FROM golang:1.22.2-alpine AS builder
 
 WORKDIR /src
@@ -20,7 +32,8 @@ COPY --from=webbuilder /web/dist /web-dist
 RUN rm -rf static \
     && mkdir -p static \
     && cp -a /web-dist/. static/
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${APP_VERSION}" -o /out/sublinkX .
+RUN go test ./... \
+    && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${APP_VERSION}" -o /out/sublinkX .
 
 FROM alpine:3.20
 
@@ -35,6 +48,7 @@ WORKDIR /app
 
 ENV TZ=Asia/Shanghai \
     GIN_MODE=release \
+    CFST_PATH=/usr/local/bin/cfst \
     UPDATE_REPO=wangxvwei/sublinkX \
     DOCKER_IMAGE=ghcr.io/wangxvwei/sublinkx
 
@@ -45,6 +59,9 @@ RUN apk add --no-cache ca-certificates tzdata wget \
     && chown -R sublink:sublink /app
 
 COPY --from=builder /out/sublinkX /app/sublinkX
+COPY --from=cfstbuilder /out/cfst /usr/local/bin/cfst
+COPY --from=cfstbuilder /out/LICENSE /out/source.tar.gz /usr/share/doc/cloudflare-speed-test/
+COPY THIRD_PARTY_NOTICES.md /usr/share/doc/sublinkx/THIRD_PARTY_NOTICES.md
 
 USER sublink
 EXPOSE 8000

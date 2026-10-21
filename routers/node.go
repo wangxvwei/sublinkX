@@ -14,6 +14,11 @@ func Nodes(r *gin.Engine) {
 		NodesGroup.GET("/get", api.NodeGet)
 		NodesGroup.POST("/update", api.NodeUpdadte)
 		NodesGroup.POST("/sync/xui", api.NodeSyncXUI)
+		NodesGroup.GET("/cdn", api.CDNList)
+		NodesGroup.POST("/cdn/save", api.CDNSave)
+		NodesGroup.POST("/cdn/:id/run", api.CDNRun)
+		NodesGroup.POST("/cdn/:id/cancel", api.CDNCancel)
+		NodesGroup.POST("/cdn/:id/import", api.CDNImport)
 
 	}
 	// 分组

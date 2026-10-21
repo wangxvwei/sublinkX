@@ -141,5 +141,9 @@ func Run(port int) {
 	routers.Version(r, version)
 	routers.Update(r, version)
 
-	r.Run(fmt.Sprintf("0.0.0.0:%d", port))
+	host := os.Getenv("SUBLINK_BIND_HOST")
+	if host == "" {
+		host = "0.0.0.0"
+	}
+	r.Run(fmt.Sprintf("%s:%d", host, port))
 }

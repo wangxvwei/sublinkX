@@ -39,6 +39,23 @@ clash支持协议:ss ssr trojan vmess vless hy hy2 tuic
 
 surge支持协议:ss trojan vmess hy2 tuic
 
+## CDN 优选（2.3.5）
+
+在「资源中心 → CDN 优选」选择原始 TLS CDN 节点，粘贴候选公网 IP 或导入 TXT，
+设置 5–10 个目标结果后开始测速。结果可以复制、导出、保存到分组或追加到已有订阅。
+仅保留实际达标且通过原节点 SNI 的 TLS 校验的 IP；不会用失败结果补齐数量。
+
+支持 VLESS WS/XHTTP/gRPC + TLS、VMess WS + TLS 和 Trojan WS + TLS。
+生成链接保留认证、SNI、Host、路径及扩展参数。每次最多输入 4096 个 IPv4/IPv6 地址，
+暂不展开 CIDR；同一实例同时运行一个测速任务，重复导入同一配置的同一 IP 会更新原记录。
+配置和结果保存在现有数据库中，服务重启后未完成的任务可以重新运行。
+
+正式 Docker 镜像内置 CloudflareSpeedTest v2.3.5，无需另外安装；
+直接运行二进制时，将 `cfst` 放入 PATH 或设置 `CFST_PATH` 指向它。
+引擎的许可证和对应源码见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+测速使用运行设备的出口，默认下载地址可以在高级设置中更换；
+电脑结果迁移到 NAS 后应重新测速。完整代理连接仍需在客户端中验证。
+
 ## [项目预览]
 
 ![1712594176714](webs/src/assets/1.png)

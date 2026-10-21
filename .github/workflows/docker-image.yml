@@ -60,7 +60,37 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
+      - name: Build image for verification
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          build-args: |
+            APP_VERSION=${{ steps.app_version.outputs.version }}
+          tags: sublinkx:verify
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify app and bundled CDN engine
+        shell: bash
+        env:
+          APP_VERSION: ${{ steps.app_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint /usr/local/bin/cfst sublinkx:verify -h | grep -F 'CloudflareSpeedTest v2.3.5'
+          docker run --rm --entrypoint sh sublinkx:verify -c 'test -s /usr/share/doc/cloudflare-speed-test/LICENSE && test -s /usr/share/doc/cloudflare-speed-test/source.tar.gz && test ! -f /app/db/sublink.db'
+          docker run -d --name sublinkx-release-check -p 127.0.0.1:18080:8000 sublinkx:verify
+          trap 'docker logs sublinkx-release-check; docker rm -f sublinkx-release-check' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/api/v1/version > /tmp/sublinkx-version.json; then break; fi
+            sleep 1
+          done
+          python3 -c 'import json, os; assert json.load(open("/tmp/sublinkx-version.json"))["data"] == os.environ["APP_VERSION"]'
+
+      - name: Publish verified image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -71,7 +101,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Build and push update helper
         uses: docker/build-push-action@v6

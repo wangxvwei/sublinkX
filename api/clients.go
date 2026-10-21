@@ -255,10 +255,9 @@ func rewriteNodeDisplayName(raw, name string) string {
 
 	scheme := strings.ToLower(strings.SplitN(raw, "://", 2)[0])
 	if scheme == "vmess" {
-		vmess, err := node.DecodeVMESSURL(raw)
+		renamed, err := node.RenameVMess(raw, name)
 		if err == nil {
-			vmess.Ps = name
-			return node.EncodeVmessURL(vmess)
+			return renamed
 		}
 	}
 
