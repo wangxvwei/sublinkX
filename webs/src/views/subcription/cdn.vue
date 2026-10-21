@@ -21,7 +21,6 @@ const loading = ref(true);
 const busy = ref(false);
 const current = computed(() => profiles.value.find(p => p.id === form.value.id));
 const running = computed(() => profiles.value.find(p => p.status === "running"));
-const nameUnsaved = computed(() => !!current.value && form.value.name.trim() !== current.value.name);
 const results = computed(() => current.value?.results || []);
 const network = computed(() => current.value?.network);
 const recommending = computed(() => form.value.candidateMode === "recommend");
@@ -63,7 +62,29 @@ function chooseProfile(id: number) {
   resultKey = "";
   void load();
 }
-function newProfile() { form.value = fresh(); selectedNode.value = undefined; selected.value = []; }
+function newProfile(copy = false) {
+  form.value = copy ? { ...form.value, id: 0, name: "", groupName: "", status: "idle", message: "", results: [], network: undefined, startedAt: undefined, finishedAt: undefined, updatedAt: undefined } : fresh();
+  if (!copy) selectedNode.value = undefined;
+  subscriptionID.value = 0;
+  selected.value = [];
+  resultKey = "";
+  table.value?.clearSelection();
+}
+async function renameProfile() {
+  if (!current.value) return;
+  try {
+    const { value } = await ElMessageBox.prompt("只修改当前配置及其节点、分组名称。新增地点请使用“复制为新配置”。", "重命名配置", {
+      inputValue: current.value.name, inputValidator: (value: string) => !!value?.trim() || "请填写配置名称",
+      confirmButtonText: "确认重命名", cancelButtonText: "取消"
+    });
+    busy.value = true;
+    const response: any = await saveCDN({ ...current.value, name: value }, true);
+    form.value.name = response.data.name;
+    await load();
+    ElMessage.success("配置、分组和节点已重命名");
+  } catch { /* Cancel or validation error; request layer handles errors. */ }
+  finally { busy.value = false; }
+}
 function useNode(id: number) {
   const n = nodes.value.find(n => n.ID === id);
   if (n) form.value.templateLink = n.LinkOverride || n.Link;
@@ -96,7 +117,7 @@ async function saveNodes() {
   busy.value = true;
   try {
     await importCDN(current.value.id, { ips: selected.value.map(r => r.ip), subscriptionID: subscriptionID.value });
-    ElMessage.success(subscriptionID.value ? "节点已保存并追加到订阅" : "节点已保存到节点库，重复 IP 已去重");
+    ElMessage.success(`“${current.value.name}”已更新为本次选中的 ${selected.value.length} 个节点`);
   } catch { /* handled */ } finally { busy.value = false; }
 }
 async function copy() {
@@ -124,7 +145,7 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
   <div v-loading="loading" class="cdn-page">
     <div class="page-heading">
       <div><span class="page-kicker">资源中心</span><h2>CDN 优选</h2><p>填写目标地区公网 IP，识别地区与运营商，生成可直接导入的 CDN 推荐节点。</p></div>
-      <div class="heading-actions"><el-tag v-if="recommending" type="warning" effect="plain">异地推荐 · 非目标地区实测</el-tag><el-tag v-else :type="engineReady ? 'success' : 'danger'" effect="plain">{{ engineReady ? '测速引擎就绪' : '测速引擎未安装' }}</el-tag><el-button :icon="Plus" @click="newProfile">新建配置</el-button></div>
+      <div class="heading-actions"><el-tag v-if="recommending" type="warning" effect="plain">异地推荐 · 非目标地区实测</el-tag><el-tag v-else :type="engineReady ? 'success' : 'danger'" effect="plain">{{ engineReady ? '测速引擎就绪' : '测速引擎未安装' }}</el-tag><el-button :icon="Plus" :disabled="busy" @click="newProfile()">新建配置</el-button></div>
     </div>
     <div class="steps-strip"><span><b>01</b> 选择原始节点</span><i>→</i><span><b>02</b> {{ recommending ? '填写目标公网 IP' : '填写 CDN 地址' }}</span><i>→</i><span><b>03</b> {{ recommending ? '匹配公开线路推荐' : '本机测速' }}</span><i>→</i><span><b>04</b> 保存节点</span></div>
     <el-alert v-if="!engineReady && !recommending" title="未找到 CloudflareSpeedTest，请在运行设备上配置 CFST_PATH。" type="error" :closable="false" show-icon />
@@ -132,7 +153,9 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
       <section class="panel input-panel">
         <div class="panel-title"><h3>优选配置</h3><el-select v-if="profiles.length" :model-value="form.id || undefined" placeholder="选择已保存配置" aria-label="选择已保存配置" @change="chooseProfile"><el-option v-for="p in profiles" :key="p.id" :label="p.name" :value="p.id" /></el-select></div>
         <el-form label-position="top" :disabled="current?.status === 'running' || busy">
-          <el-form-item label="配置名称" required><el-input v-model="form.name" maxlength="120" placeholder="请填写名称，例如：西大优选" aria-label="配置名称" /><span class="field-help">分组使用此名称，节点按“名称 · 01、02…”命名。不同地方请新建不同名称的配置。</span></el-form-item>
+          <el-form-item :label="form.id ? '正在编辑的配置' : '新配置名称'" required><el-input v-model="form.name" :readonly="!!form.id" maxlength="120" placeholder="请填写名称，例如：西大优选" aria-label="配置名称" />
+            <div v-if="form.id" class="profile-actions"><el-button link type="primary" @click="newProfile(true)">复制为新配置</el-button><el-button link @click="renameProfile">重命名</el-button></div>
+            <span class="field-help">{{ form.id ? '增加其他地点时，点击“复制为新配置”后填写新名称，当前配置会保留。' : '保存后新增一个独立配置。分组使用此名称，节点按“名称 · 01、02…”命名。' }}</span></el-form-item>
           <el-form-item label="原始 CDN 节点">
             <el-select v-model="selectedNode" filterable clearable placeholder="从已有节点中选择，也可以在下方粘贴" aria-label="从节点库选择模板" @change="useNode"><el-option v-for="n in nodes" :key="n.ID" :label="n.Name" :value="n.ID" /></el-select>
             <el-input v-model="form.templateLink" class="template-input" type="textarea" :rows="3" placeholder="vless://… / vmess://… / trojan://…" aria-label="原始节点链接" />
@@ -167,7 +190,7 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
             <el-form-item label="最低下载速度（MB/s）"><el-input-number v-model="form.minSpeed" :min="0" :max="10000" :step="0.1" :precision="2" /></el-form-item>
           </el-collapse-item></el-collapse>
         </el-form>
-        <div class="start-actions"><el-button :icon="Check" :disabled="busy || current?.status === 'running'" @click="save(false)">保存配置</el-button><el-button type="primary" :icon="VideoPlay" :disabled="(!recommending && !engineReady) || !!running" :loading="busy" @click="save(true)">{{ recommending ? '生成线路推荐' : '开始本机测速' }}</el-button></div>
+        <div class="start-actions"><el-button :icon="Check" :disabled="busy || current?.status === 'running'" @click="save(false)">{{ form.id ? '保存当前配置' : '创建新配置' }}</el-button><el-button type="primary" :icon="VideoPlay" :disabled="(!recommending && !engineReady) || !!running" :loading="busy" @click="save(true)">{{ recommending ? '生成线路推荐' : '开始本机测速' }}</el-button></div>
         <p v-if="recommending" class="small-note">仅支持 Cloudflare。按公开数据源的运营商排序推荐，不使用 A 省的测速结果推断 B 省速度。</p>
         <p v-else class="small-note">最多下载测速 {{ form.count * 3 }} 个候选后排序。测速会占用运行设备的出口带宽。</p>
       </section>
@@ -200,11 +223,10 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
             </template>
             <el-table-column label="链接" width="70"><template #default="{ row }"><el-button link type="primary" @click="showLink(row.link)">预览</el-button></template></el-table-column>
           </el-table>
-          <div v-if="results.length" class="result-actions"><span>已选 {{ selected.length }} 个</span><el-button :icon="CopyDocument" :disabled="!selected.length || nameUnsaved" @click="copy">复制链接</el-button><el-button :icon="Download" :disabled="!selected.length || nameUnsaved" @click="download">导出 TXT</el-button></div>
-          <el-alert v-if="nameUnsaved" title="名称已修改，请先保存配置，已有节点和分组将同步更名。" type="warning" :closable="false" show-icon />
+          <div v-if="results.length" class="result-actions"><span>已选 {{ selected.length }} 个</span><el-button :icon="CopyDocument" :disabled="!selected.length" @click="copy">复制链接</el-button><el-button :icon="Download" :disabled="!selected.length" @click="download">导出 TXT</el-button></div>
           <div class="save-area">
             <h4>保存到 sublinkx</h4><div class="form-row"><el-form-item label="节点分组" label-position="top"><el-input :model-value="current?.name || form.name" readonly placeholder="请先填写并保存配置名称" aria-label="节点分组" /></el-form-item><el-form-item label="追加到订阅（可选）" label-position="top"><el-select v-model="subscriptionID" aria-label="追加到订阅"><el-option label="仅保存到节点库" :value="0" /><el-option v-for="s in subs" :key="s.ID" :label="s.Name" :value="s.ID" /></el-select></el-form-item></div>
-            <el-button type="primary" :icon="Check" :disabled="!selected.length || !!running || nameUnsaved" :loading="busy" @click="saveNodes">保存选中节点</el-button><p class="small-note">分组与配置同名；仅更新当前配置的节点，相同 IP 不重复创建。原节点和订阅中的其他节点保留。</p>
+            <el-button type="primary" :icon="Check" :disabled="!selected.length || !!running" :loading="busy" @click="saveNodes">更新为选中的 {{ selected.length }} 个节点</el-button><p class="small-note">当前配置的节点将替换为本次所选数量，旧批次不再累积；已有订阅同步更新。其他配置和原始节点保留。</p>
           </div>
           <p class="verification-note">{{ recommendedResults ? '推荐地址已校验属于 Cloudflare 官方网段，保留原节点端口和配置；速度、TLS 和完整代理连接均需在目标网络测试。' : '这里验证的是 CDN 速度与 TLS 连通性。完整代理连接还需在你的客户端中测试。' }}</p>
         </section>
@@ -234,6 +256,7 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
 .file-label { color: var(--el-color-primary); cursor: pointer; font-size: 12px; position: relative; }
 .file-label input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
 .field-help, .small-note { display: block; color: var(--sx-muted); font-size: 12px; line-height: 1.8; margin: 7px 0 0; }
+.profile-actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; }
 .template-input { margin-top: 10px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .start-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }

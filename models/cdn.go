@@ -160,7 +160,7 @@ func normalizeCDN(p *CDNProfile) error {
 	return nil
 }
 
-func SaveCDNProfile(p *CDNProfile) error {
+func SaveCDNProfile(p *CDNProfile, rename bool) error {
 	if err := normalizeCDN(p); err != nil {
 		return err
 	}
@@ -181,6 +181,9 @@ func SaveCDNProfile(p *CDNProfile) error {
 		if p.ID != 0 {
 			if err := tx.First(&old, p.ID).Error; err != nil {
 				return err
+			}
+			if p.Name != old.Name && !rename {
+				return errors.New("保存配置不能直接改名；新增地点请新建配置，修改名称请使用重命名")
 			}
 		}
 		// Keep saved results when only the user-defined name changes.
@@ -457,6 +460,10 @@ func ImportCDN(id uint, ips []string, subscriptionID int) (int, error) {
 		return 0, errors.New("选中 IP 不属于本次有效结果")
 	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		// Freeze legacy subscription order before replacing names/IPs.
+		if err := syncCDNNaming(tx, &p); err != nil {
+			return err
+		}
 		var sub Subcription
 		if subscriptionID != 0 {
 			if err := tx.Preload("Nodes").First(&sub, subscriptionID).Error; err != nil {
@@ -467,13 +474,30 @@ func ImportCDN(id uint, ips []string, subscriptionID int) (int, error) {
 		if err := tx.Where("name = ?", p.Name).FirstOrCreate(&group).Error; err != nil {
 			return err
 		}
+		source := fmt.Sprintf("cdn:%d", id)
+		var existing []Node
+		if err := tx.Where("source = ?", source).Order("id").Find(&existing).Error; err != nil {
+			return err
+		}
+		wanted := map[string]bool{}
+		for _, result := range results {
+			wanted[result.IP] = true
+		}
+		byIP := map[string]Node{}
+		spare := []Node{}
+		for _, n := range existing {
+			if wanted[n.SourceKey] && byIP[n.SourceKey].ID == 0 {
+				byIP[n.SourceKey] = n
+			} else {
+				spare = append(spare, n)
+			}
+		}
 		nodes := []Node{}
 		for _, result := range results {
-			source := fmt.Sprintf("cdn:%d", id)
-			var n Node
-			err := tx.Where("source = ? AND source_key = ?", source, result.IP).First(&n).Error
-			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
+			n := byIP[result.IP]
+			// Reuse outgoing slots so existing subscriptions keep their node IDs.
+			if n.ID == 0 && len(spare) > 0 {
+				n, spare = spare[0], spare[1:]
 			}
 			n.Name, n.Link, n.Source, n.SourceKey = result.Name, result.Link, source, result.IP
 			n.LinkOverride = ""
@@ -485,7 +509,25 @@ func ImportCDN(id uint, ips []string, subscriptionID int) (int, error) {
 			}
 			nodes = append(nodes, n)
 		}
+		if len(spare) > 0 {
+			ids := make([]int, 0, len(spare))
+			for _, n := range spare {
+				ids = append(ids, n.ID)
+			}
+			if err := tx.Where("id IN ?", ids).Delete(&Node{}).Error; err != nil {
+				return err
+			}
+			for _, table := range []string{"group_node_nodes", "subcription_nodes"} {
+				if err := tx.Table(table).Where("node_id IN ?", ids).Delete(nil).Error; err != nil {
+					return err
+				}
+			}
+		}
 		if subscriptionID != 0 {
+			// Reload after obsolete slots were removed.
+			if err := tx.Preload("Nodes").First(&sub, subscriptionID).Error; err != nil {
+				return err
+			}
 			ordered := orderSubscriptionNodes(sub.Nodes, sub.NodeOrderIDs, sub.NodeOrder)
 			seen := map[int]bool{}
 			ids := []string{}
@@ -501,9 +543,6 @@ func ImportCDN(id uint, ips []string, subscriptionID int) (int, error) {
 			if err := tx.Model(&sub).Update("node_order_ids", strings.Join(ids, ",")).Error; err != nil {
 				return err
 			}
-		}
-		if err := syncCDNNaming(tx, &p); err != nil {
-			return err
 		}
 		return tx.Save(&p).Error
 	})

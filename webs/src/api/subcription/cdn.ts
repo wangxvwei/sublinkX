@@ -15,7 +15,7 @@ export interface CDNProfile {
 }
 const base = "/api/v1/nodes/cdn";
 export const getCDN = () => request({ url: base });
-export const saveCDN = (data: CDNProfile) => request({ url: `${base}/save`, method: "post", data });
+export const saveCDN = (data: CDNProfile, rename = false) => request({ url: `${base}/save`, method: "post", data: { ...data, rename } });
 export const runCDN = (id: number) => request({ url: `${base}/${id}/run`, method: "post" });
 export const cancelCDN = (id: number) => request({ url: `${base}/${id}/cancel`, method: "post" });
 export const importCDN = (id: number, data: { ips: string[]; subscriptionID: number }) =>

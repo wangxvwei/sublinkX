@@ -94,7 +94,7 @@ func TestCDNSelectionAndAtomicImport(t *testing.T) {
 	if err := DB.AutoMigrate(&Node{}, &GroupNode{}, &Subcription{}, &SubLogs{}, &CDNProfile{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveCDNProfile(&p); err != nil {
+	if err := SaveCDNProfile(&p, false); err != nil {
 		t.Fatal(err)
 	}
 	for i := range results {

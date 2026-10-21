@@ -20,16 +20,19 @@ func CDNList(c *gin.Context) {
 
 func CDNSave(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512*1024)
-	var p models.CDNProfile
-	if err := c.ShouldBindJSON(&p); err != nil {
+	var input struct {
+		models.CDNProfile
+		Rename bool `json:"rename"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(400, gin.H{"msg": "配置格式不正确或内容过长"})
 		return
 	}
-	if err := models.SaveCDNProfile(&p); err != nil {
+	if err := models.SaveCDNProfile(&input.CDNProfile, input.Rename); err != nil {
 		c.JSON(400, gin.H{"msg": err.Error()})
 		return
 	}
-	c.JSON(200, gin.H{"code": "00000", "data": p})
+	c.JSON(200, gin.H{"code": "00000", "data": input.CDNProfile})
 }
 
 func cdnID(c *gin.Context) (uint, bool) {
