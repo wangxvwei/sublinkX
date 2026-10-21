@@ -104,17 +104,26 @@ You can enter a public IP from another province while running the application el
 - **Update to the N selected nodes** replaces that profile's saved batch with your selection, so older batches do not accumulate.
 - Existing node IDs are reused where possible to maintain subscription membership. Other profiles and original nodes are managed independently.
 
-### Multiple sources and recommendation history
+### Single-source and mixed-source recommendations
 
-Recommendations use the public UOUIN, WeTest, and CFYes feeds through BestCF mirrors. Provider identities are kept separate from mirror URLs, so mirrors of the same provider do not earn extra credit. A failed provider does not stop usable providers; the page shows each feed's timestamp, matching count, and errors.
+Each profile stores its own source mode. New profiles and older profiles without a mode default to **Single source (original UOUIN)**. Upgrades preserve existing results and nodes; the page identifies the mode used for those results. Regenerate to apply the selected mode.
 
-- **Freshness**: Data older than 48 hours, or with invalid timestamps, is excluded. Recent records rank higher.
+| Source mode | Selection |
+| --- | --- |
+| **Single source (original UOUIN)** | Read only UOUIN and preserve its list order, without history reordering or subnet diversification. Outages use only fresh UOUIN cache; other providers are not added automatically. |
+| **Mixed sources** | Combine UOUIN, WeTest, and CFYes using public rank, freshness, listing history, and subnet diversity. More candidates do not guarantee a higher connection success rate. |
+
+Both modes prioritize explicitly retained IPs, including IPs absent from the selected feeds. Switching modes preserves retention; regenerate and save the selected nodes to update the node library and subscriptions. Compare modes using the same network, test URL, and client settings.
+
+The public UOUIN, WeTest, and CFYes feeds use BestCF mirrors. Mixed mode keeps provider identities separate from mirror URLs, so mirrors of the same provider do not earn extra credit. A failed provider does not stop usable providers; the page shows each feed's timestamp, matching count, and errors.
+
+- **Freshness**: Data older than 48 hours, or with invalid timestamps, is excluded. Recent records rank higher in mixed mode.
 - **Outage fallback**: If a provider request fails, use its latest persisted snapshot only while it remains within 48 hours. Cached results are labeled with the original timestamp; expired cache is excluded.
 - **History**: Each recommendation run records public observations for the last seven days. Records are deduplicated by the provider timestamp's 30-minute window; refreshes, restarts, or another profile do not inflate history.
-- **Ranking and diversity**: Combine provider-relative rank, freshness, support from multiple providers, and historical consistency, with moderate IPv4 subnet diversity.
-- **Keep known-good IPs**: Mark a result to prioritize it in future runs, even when current public feeds omit it. Changing the target IP, ISP, template, or mode clears retention; copying a profile starts without retained IPs. The nodes saved to the library still follow the current selection.
+- **Mixed ranking and diversity**: Combine provider-relative rank, freshness, support from multiple providers, and listing history, with moderate IPv4 subnet diversity.
+- **Keep known-good IPs**: Mark a result to prioritize it in future runs, even when current public feeds omit it. Switching between single and mixed sources preserves retention. Changing the target IP, ISP, template, or switching to local testing clears retention; copying a profile starts without retained IPs. The nodes saved to the library still follow the current selection.
 
-History starts accumulating with recommendation runs after the upgrade. Initial runs show limited history. Provider measurements are not displayed as measurements from the target network, and the ranking is not a speed prediction.
+History accumulates during recommendation runs and records public listings, **not successful proxy connections**. Provider measurements are not displayed as measurements from the target network, and the ranking is not a speed prediction.
 
 ### Templates and limits
 

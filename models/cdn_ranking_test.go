@@ -31,7 +31,7 @@ func TestCDNMultiSourceHistoryAndRetention(t *testing.T) {
 	must(db.AutoMigrate(&CDNObservation{}, &CDNProfile{}, &Node{}, &GroupNode{}, &Subcription{}))
 	now := time.Date(2026, 10, 21, 20, 5, 0, 0, time.FixedZone("UTC+8", 8*3600))
 	ranges := []netip.Prefix{netip.MustParsePrefix("104.16.0.0/13")}
-	p := CDNProfile{Name: "Campus", TemplateLink: "vless://u@example.com:443?security=tls&type=xhttp&path=%2Fhello", CandidateMode: "recommend", SourceIP: "9.9.9.9", Count: 5, URL: "https://example.com/file", MaxDelay: 500, Duration: 5, Network: CDNNetwork{Carrier: "CU"}}
+	p := CDNProfile{Name: "Campus", TemplateLink: "vless://u@example.com:443?security=tls&type=xhttp&path=%2Fhello", CandidateMode: "recommend", RecommendationMode: "mixed", SourceIP: "9.9.9.9", Count: 5, URL: "https://example.com/file", MaxDelay: 500, Duration: 5, Network: CDNNetwork{Carrier: "CU"}}
 	template, err := node.ParseCDNTemplate(p.TemplateLink)
 	must(err)
 	row := func(ip, source string, quality float64) cdnCandidate {
@@ -62,6 +62,13 @@ func TestCDNMultiSourceHistoryAndRetention(t *testing.T) {
 	if results[0].IP != stable.IP || results[0].HistorySamples != 3 || p.Network.HistoryWindows != 3 {
 		t.Fatal("history stability was ignored")
 	}
+	single := p
+	single.RecommendationMode = "single"
+	results, err = selectCDNRecommendations(&single, template, ranges, []cdnCandidate{stable, fresh}, history, now)
+	must(err)
+	if results[0].IP != fresh.IP || single.Network.RecommendationMode != "single" {
+		t.Fatal("single-source mode did not preserve provider order")
+	}
 	old := row("104.18.0.1", "uouin", 1)
 	old.UpdatedAt = now.Add(-40 * time.Hour)
 	results, err = selectCDNRecommendations(&p, template, ranges, []cdnCandidate{fresh, old}, nil, now)
@@ -90,6 +97,22 @@ func TestCDNMultiSourceHistoryAndRetention(t *testing.T) {
 	}
 	if len(results) != 5 || near > 2 {
 		t.Fatal("recommendations clustered in one /24")
+	}
+	results, err = selectCDNRecommendations(&single, template, ranges, diverse, nil, now)
+	must(err)
+	if len(results) != 5 || single.Network.CandidateCount != 5 {
+		t.Fatal("single-source mode lost candidates or included another provider")
+	}
+	for _, r := range results {
+		if !netip.MustParsePrefix("104.16.0.0/24").Contains(netip.MustParseAddr(r.IP)) || len(r.Sources) != 1 || r.Sources[0] != "麒麟优选" {
+			t.Fatal("single-source mode applied mixed ranking/diversity")
+		}
+	}
+	single.PinnedIPs = []string{"104.19.0.20"}
+	results, err = selectCDNRecommendations(&single, template, ranges, diverse, nil, now)
+	must(err)
+	if len(results) != 5 || results[0].IP != "104.19.0.20" || !results[0].Pinned || len(results[0].Sources) != 0 {
+		t.Fatal("single-source mode lost a retained IP or claimed an excluded provider")
 	}
 	p.PinnedIPs = []string{"104.16.0.99"}
 	results, err = selectCDNRecommendations(&p, template, ranges, diverse, nil, now)
@@ -140,6 +163,12 @@ func TestCDNMultiSourceHistoryAndRetention(t *testing.T) {
 	if len(results) != 2 || len(p.Network.Sources) != 3 || p.Network.Sources[2].Error == "" {
 		t.Fatal("partial outage aborted or was hidden")
 	}
+	single.PinnedIPs = nil
+	singleResults, err := rankCDNRecommendations(context.Background(), &single, template, ranges, now)
+	must(err)
+	if len(singleResults) != 1 || singleResults[0].IP != "104.16.1.1" || len(single.Network.Sources) != 1 || single.Network.Sources[0].ID != "uouin" {
+		t.Fatal("single-source mode fetched or displayed other providers")
+	}
 	// Retention is server-owned, profile-scoped, and cleared by network/template changes.
 	p.Results, p.Status, p.PinnedIPs = results, "completed", nil
 	must(db.Create(&p).Error)
@@ -165,6 +194,17 @@ func TestCDNMultiSourceHistoryAndRetention(t *testing.T) {
 	if len(p.PinnedIPs) != 1 {
 		t.Fatal("ordinary save erased retention")
 	}
+	p.RecommendationMode = "single"
+	must(SaveCDNProfile(&p, false))
+	if len(p.PinnedIPs) != 1 || len(p.Results) != 0 || p.Status != "idle" {
+		t.Fatal("switching modes dropped retention or left stale results")
+	}
+	must(db.First(&copy, copy.ID).Error)
+	if copy.RecommendationMode != "mixed" || len(copy.PinnedIPs) != 0 {
+		t.Fatal("mode switch affected another profile")
+	}
+	p.RecommendationMode = "mixed"
+	must(SaveCDNProfile(&p, false))
 	p.Name = "Renamed"
 	must(SaveCDNProfile(&p, true))
 	if len(p.PinnedIPs) != 1 {
@@ -208,6 +248,16 @@ func TestCDNMultiSourceHistoryAndRetention(t *testing.T) {
 	must(db.Model(&CDNObservation{}).Count(&count).Error)
 	if count != beforeCache {
 		t.Fatal("cache fallback inflated history")
+	}
+	singleResults, err = rankCDNRecommendations(context.Background(), &single, template, ranges, now)
+	must(err)
+	if len(single.Network.Sources) != 1 || !single.Network.Sources[0].Cached {
+		t.Fatal("single-source cache fallback selected other providers")
+	}
+	for _, r := range singleResults {
+		if len(r.Sources) != 1 || r.Sources[0] != "麒麟优选（缓存）" {
+			t.Fatal("single-source cache result included other providers")
+		}
 	}
 	must(db.Model(&CDNObservation{}).Where("1=1").Update("sample_at", now.Add(-49*time.Hour)).Error)
 	if _, err = rankCDNRecommendations(context.Background(), &p, template, ranges, now); err == nil {

@@ -20,15 +20,16 @@ import (
 const cdnRecommendationSource = "https://bestcf.pages.dev/uouin/all.txt"
 
 type CDNNetwork struct {
-	Location        string          `json:"location"`
-	Province        string          `json:"province"`
-	Carrier         string          `json:"carrier"`
-	Source          string          `json:"source"`
-	SourceUpdatedAt *time.Time      `json:"sourceUpdatedAt"`
-	Warning         string          `json:"warning"`
-	Sources         []CDNFeedStatus `json:"sources,omitempty"`
-	CandidateCount  int             `json:"candidateCount,omitempty"`
-	HistoryWindows  int             `json:"historyWindows,omitempty"`
+	RecommendationMode string          `json:"recommendationMode,omitempty"`
+	Location           string          `json:"location"`
+	Province           string          `json:"province"`
+	Carrier            string          `json:"carrier"`
+	Source             string          `json:"source"`
+	SourceUpdatedAt    *time.Time      `json:"sourceUpdatedAt"`
+	Warning            string          `json:"warning"`
+	Sources            []CDNFeedStatus `json:"sources,omitempty"`
+	CandidateCount     int             `json:"candidateCount,omitempty"`
+	HistoryWindows     int             `json:"historyWindows,omitempty"`
 }
 
 func cdnHTTP(ctx context.Context, address string) ([]byte, error) {
@@ -40,7 +41,7 @@ func cdnHTTP(ctx context.Context, address string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "sublinkX-CDN/2.3.9")
+	req.Header.Set("User-Agent", "sublinkX-CDN/2.3.10")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, errors.New("网络请求未完成")
@@ -158,6 +159,7 @@ func recommendCDN(ctx context.Context, p *CDNProfile) ([]CDNResult, error) {
 	if err := lookupCDNNetwork(ctx, p); err != nil {
 		return nil, err
 	}
+	p.Network.RecommendationMode = p.RecommendationMode
 	p.Network.Warning = "数据源未提供该省独立测速记录，以下为同运营商通用推荐；非目标省份实测，延迟、下载速度与代理可用性均未验证。"
 	p.Network.Source = cdnRecommendationSource
 	ranges, err := cloudflareRanges(ctx)

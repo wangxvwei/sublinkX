@@ -7,7 +7,7 @@ import { getSubs } from "@/api/subcription/subs";
 
 type SavedNode = { ID: number; Name: string; Link: string; LinkOverride?: string };
 const fresh = (): CDNProfile => ({ id: 0, name: "", templateLink: "", ips: "", count: 10,
-  candidateMode: "recommend", sourceIP: "", carrier: "",
+  candidateMode: "recommend", recommendationMode: "single", sourceIP: "", carrier: "",
   url: "https://cf.xiu2.xyz/url", maxDelay: 500, maxLoss: 0,
   minSpeed: 0.1, duration: 5, groupName: "", status: "idle", message: "", results: [] });
 const form = ref<CDNProfile>(fresh());
@@ -26,6 +26,9 @@ const network = computed(() => current.value?.network);
 const pinnedIPs = computed(() => current.value?.pinnedIPs || []);
 const recommending = computed(() => form.value.candidateMode === "recommend");
 const recommendedResults = computed(() => current.value ? current.value.candidateMode === "recommend" : recommending.value);
+const recommendationNames = { single: "单源推荐（原版麒麟）", mixed: "多源混合推荐" };
+// Older results predate the mode field; their source statuses identify the run.
+const resultMode = computed(() => network.value?.recommendationMode || (network.value?.source ? ((network.value.sources?.length || 0) > 1 ? "mixed" : "single") : (current.value?.recommendationMode || "single")));
 const carrierNames: Record<string, string> = { CT: "电信", CU: "联通", CM: "移动" };
 const selected = ref<CDNResult[]>([]);
 const table = ref<any>();
@@ -58,7 +61,7 @@ async function poll() {
 }
 function chooseProfile(id: number) {
   const p = profiles.value.find(p => p.id === id);
-  if (p) form.value = { ...p, candidateMode: p.candidateMode || "manual" };
+  if (p) form.value = { ...p, candidateMode: p.candidateMode || "manual", recommendationMode: p.recommendationMode || "single" };
   selectedNode.value = undefined;
   resultKey = "";
   void load();
@@ -185,18 +188,23 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
             </el-select>
           </el-form-item>
           <template v-if="recommending">
+            <el-form-item label="推荐来源模式">
+              <el-select v-model="form.recommendationMode" aria-label="推荐来源模式"><el-option v-for="(label, mode) in recommendationNames" :key="mode" :label="label" :value="mode" /></el-select>
+              <span class="field-help">{{ form.recommendationMode === 'mixed' ? '混合麒麟、WeTest、CFYes，综合公开排名、新鲜度与上榜记录。候选更多，不保证通过率更高。' : '沿用原版麒麟列表顺序；除你保留的好用 IP 外，只使用麒麟来源，不混入其他来源。' }}</span>
+              <span class="field-help">每个地点独立保存。切换后重新生成才生效，好用 IP 保留；保存结果时才更新节点库。</span>
+            </el-form-item>
             <el-form-item label="目标地区公网 IPv4">
               <el-input v-model="form.sourceIP" maxlength="45" placeholder="例如填写 B 省用户的公网 IP，与 NAS 所在地无关" aria-label="目标地区公网 IPv4" />
               <span class="field-help">你在 A 省也可以填写 B 省的公网 IP。用于识别目标地区和运营商，不会拿这个 IP 当 CDN 地址测速。</span>
             </el-form-item>
             <el-form-item label="目标运营商">
               <el-select v-model="form.carrier" placeholder="根据公网 IP 自动识别" aria-label="目标运营商"><el-option label="根据公网 IP 自动识别" value="" /><el-option v-for="(name, code) in carrierNames" :key="code" :label="name" :value="code" /></el-select>
-              <span class="field-help">识别不准确时可手动指定。综合多个公开来源、新鲜度和近期历史排序，提供电信、联通、移动通用推荐。</span>
+              <span class="field-help">识别不准确时可手动指定。所选来源按运营商提供通用推荐，不代表该省实测。</span>
             </el-form-item>
             <el-form-item v-if="current" label="保留好用的 IP">
               <div v-if="pinnedIPs.length" class="pinned-list"><el-tag v-for="ip in pinnedIPs" :key="ip" :closable="!busy && !running" @close="keepIP(ip, false)">{{ ip }}</el-tag></div>
               <span v-else class="field-help">在推荐结果中点击“保留好用”，后续生成时优先保留。</span>
-              <span class="field-help">保留只作用于当前配置；修改原始节点、目标公网 IP、运营商或优选方式后会清除标记。保存节点以本次勾选为准。</span>
+              <span class="field-help">单源与多源切换时保留标记。修改原始节点、目标公网 IP、运营商或改为本机测速后会清除标记。保存节点以本次勾选为准。</span>
             </el-form-item>
           </template>
           <el-form-item v-else>
@@ -223,13 +231,14 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
           <p v-else class="status-message">{{ current?.message || '选择原节点，填写目标公网 IP，即可生成线路推荐。' }}</p>
           <div class="status-meta"><span>开始：{{ date(current?.startedAt) }}</span><span>完成：{{ date(current?.finishedAt) }}</span></div>
           <div v-if="network?.location || network?.warning" class="network-details">
+            <p v-if="recommendedResults">本次结果模式：<strong>{{ recommendationNames[resultMode] }}</strong></p>
             <p v-if="current?.sourceIP">目标公网 IP：<strong>{{ current.sourceIP }}</strong><br />{{ network?.location }}</p>
             <p v-if="network?.carrier">目标地区：{{ network.province || '未识别' }} · {{ carrierNames[network.carrier] }}<br />匹配范围：同运营商通用推荐（非省级实测）</p>
             <div v-if="network?.sources?.length" class="feed-statuses">
               <p>公开候选 {{ network.candidateCount || 0 }} 个 · 已积累 {{ network.historyWindows || 0 }} 个历史时段</p>
               <div v-for="feed in network.sources" :key="feed.id" class="feed-status"><a :href="feed.url" target="_blank" rel="noopener noreferrer">{{ feed.name }}</a><el-tag :type="feed.error ? 'warning' : feed.count ? 'success' : 'info'" size="small">{{ feed.cached ? `缓存 · ${feed.count} 个地址` : feed.error ? '暂不可用' : `${feed.count} 个匹配地址` }}</el-tag><span>{{ feed.cached ? `请求失败，使用有效期内缓存；上游更新：${date(feed.updatedAt)}` : feed.error || `上游更新：${date(feed.updatedAt)}` }}</span></div>
-              <span class="field-help">三个原始来源均经 BestCF 公开镜像读取。同源镜像不重复加分；来源失效时使用其余有效数据。</span>
-              <span class="field-help">历史在生成推荐时积累，按上游更新时间的 30 分钟窗口去重，参考最近 7 天。首次或历史不足时主要按新鲜度和来源排序；不代表目标线路测速。</span>
+              <span class="field-help">{{ resultMode === 'mixed' ? '三个原始来源均经 BestCF 公开镜像读取。同源镜像不重复加分；来源失效时使用其余有效数据。' : '麒麟来源经 BestCF 公开镜像读取。来源失效时只使用麒麟的有效缓存和你保留的 IP，不自动切换其他来源。' }}</span>
+              <span class="field-help">历史是最近 7 天公开列表的上榜记录，不是节点连接成功率。按上游时间的 30 分钟窗口去重；单源模式不按历史重新排序。</span>
             </div>
             <p v-else-if="network?.source">数据源：<a :href="network.source" target="_blank" rel="noopener noreferrer">麒麟优选 · BestCF 公开镜像</a><br />数据源更新时间：{{ date(network.sourceUpdatedAt) }}</p>
             <el-alert v-if="network?.warning" :title="network.warning" type="warning" :closable="false" show-icon />
@@ -238,7 +247,7 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
           <p class="network-note">{{ recommending ? '公网 IP 只用于识别目标线路。推荐不代表目标地区已经测过，也不保证可用或最快；生成后由使用者在目标网络验证。' : '测速从运行 sublinkx 的设备发起，结果只代表这台设备的实际出口。请确保测速流量直连。' }}</p>
         </section>
         <section class="panel results-panel">
-          <div class="panel-title"><div><h3>{{ recommendedResults ? '线路推荐' : '优选结果' }} <span class="count-badge">{{ results.length }}</span></h3><p>{{ recommendedResults ? '优先保留好用 IP，再综合来源、新鲜度与历史表现；非目标地区实测。' : '按下载速度排序，已通过原节点域名的 TLS 校验。' }}</p></div><el-button :icon="Refresh" @click="load">刷新</el-button></div>
+          <div class="panel-title"><div><h3>{{ recommendedResults ? '线路推荐' : '优选结果' }} <span class="count-badge">{{ results.length }}</span></h3><p>{{ recommendedResults ? (resultMode === 'mixed' ? '优先保留好用 IP，再综合多个来源、新鲜度与上榜记录；非目标地区实测。' : '优先保留好用 IP，其余按麒麟原始顺序选择；非目标地区实测。') : '按下载速度排序，已通过原节点域名的 TLS 校验。' }}</p></div><el-button :icon="Refresh" @click="load">刷新</el-button></div>
           <div v-if="!results.length" class="empty-results"><div class="empty-symbol">↗</div><strong>{{ running ? '任务正在后台运行' : '结果将在这里显示' }}</strong><p>{{ running ? '你可以切换到其他页面。' : recommendedResults ? '按目标运营商匹配公开地址；不足时显示实际数量，不虚构结果。' : '仅保留实际达标的 IP，数量不足时不会用失败结果补齐。' }}</p></div>
           <el-table v-else ref="table" :data="results" row-key="ip" @selection-change="selected = $event" class="results-table">
             <el-table-column type="selection" :reserve-selection="true" width="42" /><el-table-column prop="name" label="节点名称" min-width="160" show-overflow-tooltip /><el-table-column prop="ip" label="IP 地址" min-width="155" show-overflow-tooltip />

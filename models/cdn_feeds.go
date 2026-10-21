@@ -154,11 +154,15 @@ func readCDNFeed(data []byte, source string, ranges []netip.Prefix, now time.Tim
 	return candidates, updated, nil
 }
 
-func collectCDNFeeds(ctx context.Context, ranges []netip.Prefix, now time.Time) ([]cdnCandidate, []CDNFeedStatus) {
+func collectCDNFeeds(ctx context.Context, ranges []netip.Prefix, now time.Time, mixed bool) ([]cdnCandidate, []CDNFeedStatus) {
+	feeds := cdnFeeds
+	if !mixed {
+		feeds = feeds[:1]
+	}
 	var wg sync.WaitGroup
-	all := make([][]cdnCandidate, len(cdnFeeds))
-	statuses := make([]CDNFeedStatus, len(cdnFeeds))
-	for i, feed := range cdnFeeds {
+	all := make([][]cdnCandidate, len(feeds))
+	statuses := make([]CDNFeedStatus, len(feeds))
+	for i, feed := range feeds {
 		wg.Add(1)
 		go func(i int, id, name, address string) {
 			defer wg.Done()

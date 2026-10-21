@@ -18,7 +18,15 @@ func TestCDNRemoteRecommendations(t *testing.T) {
 	if err := normalizeCDN(&p); err != nil || p.IPs != "" || p.SourceIP != "9.9.9.9" {
 		t.Fatal("home IP was treated as a CDN destination", err)
 	}
+	if p.RecommendationMode != "single" {
+		t.Fatal("new and legacy profiles must default to single-source mode")
+	}
 	bad := p
+	bad.RecommendationMode = "untrusted"
+	if normalizeCDN(&bad) == nil {
+		t.Fatal("accepted unknown recommendation mode")
+	}
+	bad = p
 	bad.SourceIP = "127.0.0.1"
 	if normalizeCDN(&bad) == nil {
 		t.Fatal("accepted a private source IP")

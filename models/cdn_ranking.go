@@ -44,7 +44,7 @@ func saveCDNObservations(candidates []cdnCandidate, now time.Time) error {
 }
 
 func rankCDNRecommendations(ctx context.Context, p *CDNProfile, template node.CDNTemplate, ranges []netip.Prefix, now time.Time) ([]CDNResult, error) {
-	candidates, statuses := collectCDNFeeds(ctx, ranges, now)
+	candidates, statuses := collectCDNFeeds(ctx, ranges, now, p.RecommendationMode == "mixed")
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -87,6 +87,11 @@ func rankCDNRecommendations(ctx context.Context, p *CDNProfile, template node.CD
 }
 
 func selectCDNRecommendations(p *CDNProfile, template node.CDNTemplate, ranges []netip.Prefix, candidates []cdnCandidate, observations []CDNObservation, now time.Time) ([]CDNResult, error) {
+	mixed := p.RecommendationMode == "mixed"
+	p.Network.RecommendationMode = "single"
+	if mixed {
+		p.Network.RecommendationMode = "mixed"
+	}
 	type history struct {
 		Windows map[time.Time]bool
 		Quality float64
@@ -96,6 +101,9 @@ func selectCDNRecommendations(p *CDNProfile, template node.CDNTemplate, ranges [
 	sourceWindows := map[string]map[time.Time]bool{}
 	allWindows := map[time.Time]bool{}
 	for _, o := range observations {
+		if !mixed && o.Source != "uouin" {
+			continue
+		}
 		if o.Carrier != p.Network.Carrier || o.Port != template.Port || o.Window.Before(now.UTC().Truncate(30*time.Minute).Add(-7*24*time.Hour)) {
 			continue
 		}
@@ -122,6 +130,9 @@ func selectCDNRecommendations(p *CDNProfile, template node.CDNTemplate, ranges [
 	}
 	byIP := map[string]*ranked{}
 	for _, c := range candidates {
+		if !mixed && c.Source != "uouin" {
+			continue
+		}
 		if c.Carrier != p.Network.Carrier || c.Port != template.Port || c.IP == p.SourceIP || now.Sub(c.UpdatedAt) > 48*time.Hour || c.UpdatedAt.After(now.Add(5*time.Minute)) {
 			continue
 		}
@@ -150,7 +161,7 @@ func selectCDNRecommendations(p *CDNProfile, template node.CDNTemplate, ranges [
 		byIP[ip].Result.Pinned = true
 	}
 	if len(byIP) == 0 {
-		return nil, errors.New("各公开来源均未取得该运营商、端口的新鲜有效地址；已有节点保留，请稍后重试")
+		return nil, errors.New("所选公开来源未取得该运营商、端口的新鲜有效地址；已有节点保留，请稍后重试或切换推荐模式")
 	}
 	items := []*ranked{}
 	for ip, r := range byIP {
@@ -185,13 +196,20 @@ func selectCDNRecommendations(p *CDNProfile, template node.CDNTemplate, ranges [
 		// ponytail: a transparent ranking heuristic, not calibrated speed prediction;
 		// tune weights only after collecting actual target-network feedback.
 		r.Score += math.Min(20, 10*math.Max(0, float64(len(r.BySource)-1))) + stability
+		if !mixed {
+			// Restore the original provider order; history must not reorder single-source results.
+			r.Score = r.BySource["uouin"].Quality
+		}
 		r.Result.HistorySamples = len(windows)
-		r.Result.Basis = fmt.Sprintf("%d 个公开来源 · 历史 %d 期", len(r.BySource), len(windows))
+		r.Result.Basis = fmt.Sprintf("%d 个公开来源 · 上榜 %d 期", len(r.BySource), len(windows))
+		if !mixed {
+			r.Result.Basis = fmt.Sprintf("麒麟原始顺序 · 上榜 %d 期", len(windows))
+		}
 		if r.Result.Cached {
 			r.Result.Basis += " · 含新鲜缓存"
 		}
 		if len(r.BySource) == 0 {
-			r.Result.Basis = "用户保留 · 当前公开源未收录"
+			r.Result.Basis = "用户保留 · 本次来源未收录"
 		}
 		items = append(items, r)
 	}
@@ -213,7 +231,7 @@ func selectCDNRecommendations(p *CDNProfile, template node.CDNTemplate, ranges [
 			}
 			ip := r.Result.IP
 			prefix := netip.PrefixFrom(netip.MustParseAddr(ip), 24).Masked().String()
-			if used[ip] || (pass == 0 && !r.Result.Pinned && prefixes[prefix] >= 2) {
+			if used[ip] || (mixed && pass == 0 && !r.Result.Pinned && prefixes[prefix] >= 2) {
 				continue
 			}
 			result := r.Result

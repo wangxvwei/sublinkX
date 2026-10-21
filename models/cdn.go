@@ -44,29 +44,30 @@ type CDNResult struct {
 }
 
 type CDNProfile struct {
-	ID            uint        `json:"id" gorm:"primaryKey"`
-	Name          string      `json:"name"`
-	TemplateLink  string      `json:"templateLink" gorm:"type:text"`
-	CandidateMode string      `json:"candidateMode"`
-	SourceIP      string      `json:"sourceIP"`
-	Carrier       string      `json:"carrier"`
-	Network       CDNNetwork  `json:"network" gorm:"serializer:json;type:text"`
-	IPs           string      `json:"ips" gorm:"type:text"`
-	Count         int         `json:"count"`
-	URL           string      `json:"url"`
-	MaxDelay      float64     `json:"maxDelay"`
-	MaxLoss       float64     `json:"maxLoss"`
-	MinSpeed      float64     `json:"minSpeed"`
-	Duration      int         `json:"duration"`
-	GroupName     string      `json:"groupName"`
-	NamingVersion int         `json:"-"`
-	Status        string      `json:"status"`
-	Message       string      `json:"message"`
-	Results       []CDNResult `json:"results" gorm:"serializer:json;type:text"`
-	PinnedIPs     []string    `json:"pinnedIPs" gorm:"serializer:json;type:text"`
-	StartedAt     *time.Time  `json:"startedAt"`
-	FinishedAt    *time.Time  `json:"finishedAt"`
-	UpdatedAt     time.Time   `json:"updatedAt"`
+	ID                 uint        `json:"id" gorm:"primaryKey"`
+	Name               string      `json:"name"`
+	TemplateLink       string      `json:"templateLink" gorm:"type:text"`
+	CandidateMode      string      `json:"candidateMode"`
+	RecommendationMode string      `json:"recommendationMode" gorm:"default:single"`
+	SourceIP           string      `json:"sourceIP"`
+	Carrier            string      `json:"carrier"`
+	Network            CDNNetwork  `json:"network" gorm:"serializer:json;type:text"`
+	IPs                string      `json:"ips" gorm:"type:text"`
+	Count              int         `json:"count"`
+	URL                string      `json:"url"`
+	MaxDelay           float64     `json:"maxDelay"`
+	MaxLoss            float64     `json:"maxLoss"`
+	MinSpeed           float64     `json:"minSpeed"`
+	Duration           int         `json:"duration"`
+	GroupName          string      `json:"groupName"`
+	NamingVersion      int         `json:"-"`
+	Status             string      `json:"status"`
+	Message            string      `json:"message"`
+	Results            []CDNResult `json:"results" gorm:"serializer:json;type:text"`
+	PinnedIPs          []string    `json:"pinnedIPs" gorm:"serializer:json;type:text"`
+	StartedAt          *time.Time  `json:"startedAt"`
+	FinishedAt         *time.Time  `json:"finishedAt"`
+	UpdatedAt          time.Time   `json:"updatedAt"`
 }
 
 // ponytail: one process per installation avoids competing bandwidth tests;
@@ -119,6 +120,12 @@ func normalizeCDN(p *CDNProfile) error {
 	}
 	if p.CandidateMode != "recommend" && p.CandidateMode != "manual" {
 		return errors.New("请选择异地线路推荐或本机测速")
+	}
+	if p.RecommendationMode == "" {
+		p.RecommendationMode = "single"
+	}
+	if p.RecommendationMode != "single" && p.RecommendationMode != "mixed" {
+		return errors.New("请选择单源推荐或多源混合推荐")
 	}
 	if p.CandidateMode == "recommend" && p.SourceIP == "" {
 		return errors.New("请填写目标地区的公网 IPv4")
@@ -194,7 +201,7 @@ func SaveCDNProfile(p *CDNProfile, rename bool) error {
 			}
 		}
 		// Keep saved results when only the user-defined name changes.
-		settingsUnchanged := old.ID != 0 && old.TemplateLink == p.TemplateLink && old.CandidateMode == p.CandidateMode &&
+		settingsUnchanged := old.ID != 0 && old.TemplateLink == p.TemplateLink && old.CandidateMode == p.CandidateMode && old.RecommendationMode == p.RecommendationMode &&
 			old.SourceIP == p.SourceIP && old.Carrier == p.Carrier && old.IPs == p.IPs && old.Count == p.Count &&
 			old.URL == p.URL && old.MaxDelay == p.MaxDelay && old.MaxLoss == p.MaxLoss && old.MinSpeed == p.MinSpeed && old.Duration == p.Duration
 		p.PinnedIPs = old.PinnedIPs // Retention changes use the dedicated, validated action.
@@ -282,7 +289,11 @@ func runCDN(ctx context.Context, cancel context.CancelFunc, p CDNProfile, bin st
 	}
 	status, message := "completed", fmt.Sprintf("优选完成：目标 %d 个，实际 %d 个；已校验原节点 SNI 的 TLS 连接", p.Count, len(results))
 	if p.CandidateMode == "recommend" {
-		message = fmt.Sprintf("已生成 %d 条线路推荐（目标 %d 条）；综合公开来源、新鲜度与历史表现，非目标省份实测", len(results), p.Count)
+		mode := "单源推荐（原版麒麟顺序）"
+		if p.RecommendationMode == "mixed" {
+			mode = "多源混合推荐（综合来源、新鲜度与公开列表历史）"
+		}
+		message = fmt.Sprintf("已生成 %d 条线路推荐（目标 %d 条）；%s，非目标省份实测", len(results), p.Count, mode)
 	}
 	if err != nil {
 		status, message = "failed", err.Error()

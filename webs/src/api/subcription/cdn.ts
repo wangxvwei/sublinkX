@@ -10,7 +10,8 @@ export interface CDNFeedStatus { id: string; name: string; url: string; count: n
 export interface CDNProfile {
   id: number; name: string; templateLink: string; ips: string; count: number;
   candidateMode?: "recommend" | "manual"; sourceIP?: string; carrier?: string;
-  network?: { location: string; province: string; carrier: string; source: string; sourceUpdatedAt?: string; warning: string; sources?: CDNFeedStatus[]; candidateCount?: number; historyWindows?: number };
+  recommendationMode?: "single" | "mixed";
+  network?: { recommendationMode?: "single" | "mixed"; location: string; province: string; carrier: string; source: string; sourceUpdatedAt?: string; warning: string; sources?: CDNFeedStatus[]; candidateCount?: number; historyWindows?: number };
   url: string; maxDelay: number; maxLoss: number; minSpeed: number; duration: number;
   groupName: string; status: string; message: string; results: CDNResult[] | null;
   pinnedIPs?: string[] | null;
