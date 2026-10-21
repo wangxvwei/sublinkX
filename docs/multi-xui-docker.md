@@ -18,7 +18,7 @@
 - 3x-ui API Token 方式同步远程面板节点。
 - 自动改写远程订阅中的本地地址。
 - Web 表单式节点改写规则。
-- DockerHub / GHCR 自动构建发布。
+- GHCR 正式镜像自动构建发布。
 - 非 Docker VPS 测试安装脚本。
 
 ## 推荐部署方式
@@ -41,7 +41,7 @@ cd sublinkx
 ```yaml
 services:
   sublinkx:
-    image: wangxvwei/sublinkx:latest
+    image: ghcr.io/wangxvwei/sublinkx:latest
     container_name: sublinkx
     restart: unless-stopped
     ports:
@@ -78,9 +78,11 @@ admin / 123456
 
 ```bash
 mkdir -p sublinkx && cd sublinkx
-curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xui-sources-docker/docker-compose.multi-xui.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/main/docker-compose.yml -o docker-compose.yml
 docker compose up -d
 ```
+
+上述一键下载使用仓库的主 Compose 文件，包含网页更新所需的 Docker socket 挂载与 root 用户配置。权限说明见 [项目首页](../README.md#快速开始)。
 
 ## 数据持久化
 
@@ -145,14 +147,14 @@ http://NAS_IP:18000
 普通安装：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xui-sources-docker/scripts/install-non-docker.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/main/scripts/install-non-docker.sh)
 ```
 
 测试安装，不影响已有 Sublink 服务：
 
 ```bash
 INSTALL_DIR=/opt/sublinkx-test SERVICE_NAME=sublinkx-test SUBLINK_PORT=18000 \
-bash <(curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/feature/multi-xui-sources-docker/scripts/install-non-docker.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/wangxvwei/sublinkX/main/scripts/install-non-docker.sh)
 ```
 
 访问：
@@ -201,8 +203,8 @@ API Token
 示例：
 
 ```text
-名称: 107
-主机: 107.174.102.197
+名称: 东京示例
+主机: 192.0.2.10
 SSH 端口: 22
 用户名: root
 认证方式: 账号密码
@@ -216,8 +218,8 @@ SSH 端口: 22
 x-ui DB: /etc/x-ui/x-ui.db
 订阅 Base: https://127.0.0.1:2096
 订阅路径: dingyue
-分组: 107
-名称前缀: [107]
+分组: 东京示例
+名称前缀: [东京]
 删除缺失节点: 按需开启
 ```
 
@@ -235,8 +237,8 @@ x-ui DB: /etc/x-ui/x-ui.db
 示例：
 
 ```text
-名称: 144
-面板地址: https://144.225.124.110:53380/xxxxx
+名称: 香港示例
+面板地址: https://198.51.100.20:53380/xxxxx
 认证方式: API Token
 API Token: 远程 3x-ui 生成的 API Token
 启用: 开
@@ -245,8 +247,8 @@ API Token: 远程 3x-ui 生成的 API Token
 高级选项：
 
 ```text
-分组: 144
-名称前缀: [144]
+分组: 香港示例
+名称前缀: [香港]
 删除缺失节点: 按需开启
 ```
 
@@ -262,13 +264,13 @@ API Token: 远程 3x-ui 生成的 API Token
 单个源同步：
 
 ```text
-VPS 源管理 -> 对应源 -> 同步
+来源接入 -> 对应源 -> 同步
 ```
 
 同步所有启用源：
 
 ```text
-VPS 源管理 -> 同步全部启用源
+来源接入 -> 同步全部启用源
 ```
 
 同步后节点会进入普通节点池，可以在 SublinkX 中继续选择、分组和生成统一订阅。
@@ -294,13 +296,13 @@ vless://uuid@127.0.0.1:10000?type=xhttp
 VPS 源主机填写：
 
 ```text
-192.3.233.106
+203.0.113.10
 ```
 
 则导入时会改成：
 
 ```text
-vless://uuid@192.3.233.106:10000?type=xhttp
+vless://uuid@203.0.113.10:10000?type=xhttp
 ```
 
 如果还需要改成 CDN 域名、443、TLS、SNI、Host 等，请使用节点改写规则。
@@ -310,7 +312,7 @@ vless://uuid@192.3.233.106:10000?type=xhttp
 入口：
 
 ```text
-VPS 源管理 -> 高级选项 -> 节点改写规则
+来源接入 -> 高级选项 -> 节点改写规则
 ```
 
 可匹配字段：
