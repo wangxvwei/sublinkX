@@ -26,15 +26,20 @@ import (
 )
 
 type CDNResult struct {
-	IP             string  `json:"ip"`
-	Delay          float64 `json:"delay"`
-	Loss           float64 `json:"loss"`
-	Speed          float64 `json:"speed"`
-	Colo           string  `json:"colo"`
-	TLSOK          bool    `json:"tlsOK"`
-	Link           string  `json:"link"`
-	Name           string  `json:"name"`
-	Recommendation bool    `json:"recommendation,omitempty"`
+	IP              string     `json:"ip"`
+	Delay           float64    `json:"delay"`
+	Loss            float64    `json:"loss"`
+	Speed           float64    `json:"speed"`
+	Colo            string     `json:"colo"`
+	TLSOK           bool       `json:"tlsOK"`
+	Link            string     `json:"link"`
+	Name            string     `json:"name"`
+	Recommendation  bool       `json:"recommendation,omitempty"`
+	Pinned          bool       `json:"pinned,omitempty"`
+	Sources         []string   `json:"sources,omitempty"`
+	SourceUpdatedAt *time.Time `json:"sourceUpdatedAt,omitempty"`
+	HistorySamples  int        `json:"historySamples,omitempty"`
+	Basis           string     `json:"basis,omitempty"`
 }
 
 type CDNProfile struct {
@@ -57,6 +62,7 @@ type CDNProfile struct {
 	Status        string      `json:"status"`
 	Message       string      `json:"message"`
 	Results       []CDNResult `json:"results" gorm:"serializer:json;type:text"`
+	PinnedIPs     []string    `json:"pinnedIPs" gorm:"serializer:json;type:text"`
 	StartedAt     *time.Time  `json:"startedAt"`
 	FinishedAt    *time.Time  `json:"finishedAt"`
 	UpdatedAt     time.Time   `json:"updatedAt"`
@@ -190,6 +196,13 @@ func SaveCDNProfile(p *CDNProfile, rename bool) error {
 		settingsUnchanged := old.ID != 0 && old.TemplateLink == p.TemplateLink && old.CandidateMode == p.CandidateMode &&
 			old.SourceIP == p.SourceIP && old.Carrier == p.Carrier && old.IPs == p.IPs && old.Count == p.Count &&
 			old.URL == p.URL && old.MaxDelay == p.MaxDelay && old.MaxLoss == p.MaxLoss && old.MinSpeed == p.MinSpeed && old.Duration == p.Duration
+		p.PinnedIPs = old.PinnedIPs // Retention changes use the dedicated, validated action.
+		if old.TemplateLink != p.TemplateLink || old.SourceIP != p.SourceIP || old.Carrier != p.Carrier || old.CandidateMode != p.CandidateMode {
+			p.PinnedIPs = nil
+		}
+		if len(p.PinnedIPs) > p.Count {
+			return fmt.Errorf("已保留 %d 个 IP，请先取消部分保留，再减少推荐数量", len(p.PinnedIPs))
+		}
 		p.GroupName, p.NamingVersion, p.Results = old.GroupName, old.NamingVersion, old.Results
 		p.Status, p.Message, p.Network, p.StartedAt, p.FinishedAt = old.Status, old.Message, old.Network, old.StartedAt, old.FinishedAt
 		if p.ID != 0 {
@@ -268,7 +281,7 @@ func runCDN(ctx context.Context, cancel context.CancelFunc, p CDNProfile, bin st
 	}
 	status, message := "completed", fmt.Sprintf("优选完成：目标 %d 个，实际 %d 个；已校验原节点 SNI 的 TLS 连接", p.Count, len(results))
 	if p.CandidateMode == "recommend" {
-		message = fmt.Sprintf("已生成 %d 条同运营商通用推荐（目标 %d 条）；非目标省份实测，未验证代理可用性", len(results), p.Count)
+		message = fmt.Sprintf("已生成 %d 条线路推荐（目标 %d 条）；综合公开来源、新鲜度与历史表现，非目标省份实测", len(results), p.Count)
 	}
 	if err != nil {
 		status, message = "failed", err.Error()

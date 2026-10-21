@@ -89,3 +89,25 @@ func CDNImport(c *gin.Context) {
 	}
 	c.JSON(200, gin.H{"code": "00000", "data": n, "msg": "已保存到节点库"})
 }
+
+func CDNPinnedIP(c *gin.Context) {
+	id, ok := cdnID(c)
+	if !ok {
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
+	var input struct {
+		IP   string `json:"ip"`
+		Keep *bool  `json:"keep"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil || input.Keep == nil {
+		c.JSON(400, gin.H{"msg": "保留 IP 请求格式不正确"})
+		return
+	}
+	p, err := models.SetCDNPinnedIP(id, input.IP, *input.Keep)
+	if err != nil {
+		c.JSON(400, gin.H{"msg": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"code": "00000", "data": p})
+}

@@ -32,6 +32,16 @@ func TestCDNRemoteRecommendations(t *testing.T) {
 			t.Fatal("wrong carrier", input, got)
 		}
 	}
+	for raw, want := range map[string]string{
+		`{"ip":"9.9.9.9","asn":{"org":"CHINA UNICOM China169 Backbone"}}`: "CU",
+		`{"ip":"9.9.9.9","asn":{"org":"China Telecom"}}`:                  "CT",
+		`{"ip":"1.1.1.1","asn":{"org":"China Mobile"}}`:                   "",
+		`{"ip":"9.9.9.9","asn":null}`:                                     "",
+	} {
+		if got := cdnASNCarrier([]byte(raw), "9.9.9.9"); got != want {
+			t.Fatal("ASN carrier lookup failed", got, want)
+		}
+	}
 	template, err := node.ParseCDNTemplate(p.TemplateLink)
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +59,11 @@ func TestCDNRemoteRecommendations(t *testing.T) {
 8.8.8.8:443#麒麟优选 | 联通 | 8.8.8.8 | 30ms | 10mb/s
 104.16.0.4:443#麒麟优选 | 联通 | 104.16.0.4 | 30ms | 10mb/s
 162.159.197.1:443#麒麟优选 | 更多内容 | BestCF.pages.dev`, now.Format("01-02 15:04")))
-	results, err := readCDNRecommendations(data, &p, template, ranges, now)
+	candidates, _, err := readCDNFeed(data, "uouin", ranges, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := selectCDNRecommendations(&p, template, ranges, candidates, nil, now)
 	if err != nil || len(results) != 2 || results[0].IP != "104.16.0.1" || results[1].IP != "104.16.0.4" {
 		t.Fatal("wrong filtering/ranking", results, err)
 	}
@@ -58,11 +72,11 @@ func TestCDNRemoteRecommendations(t *testing.T) {
 			t.Fatal("recommendation claimed a measurement or lost SNI", r)
 		}
 	}
-	if _, err := readCDNRecommendations(data, &p, template, ranges, now.Add(49*time.Hour)); err == nil {
+	if _, _, err := readCDNFeed(data, "uouin", ranges, now.Add(49*time.Hour)); err == nil {
 		t.Fatal("accepted stale recommendations")
 	}
 	yearEnd := []byte(strings.Replace(string(data), "10-21 19:00", "12-31 23:00", 1))
-	if _, err := readCDNRecommendations(yearEnd, &p, template, ranges, time.Date(2027, 1, 1, 0, 0, 0, 0, now.Location())); err != nil {
+	if _, _, err := readCDNFeed(yearEnd, "uouin", ranges, time.Date(2027, 1, 1, 0, 0, 0, 0, now.Location())); err != nil {
 		t.Fatal("year boundary rejected fresh feed", err)
 	}
 }

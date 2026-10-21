@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { Plus, Refresh, VideoPlay, VideoPause, CopyDocument, Download, Check } from "@element-plus/icons-vue";
-import { getCDN, saveCDN, runCDN, cancelCDN, importCDN, type CDNProfile, type CDNResult } from "@/api/subcription/cdn";
+import { getCDN, saveCDN, runCDN, cancelCDN, importCDN, setCDNPinnedIP, type CDNProfile, type CDNResult } from "@/api/subcription/cdn";
 import { getNodes } from "@/api/subcription/node";
 import { getSubs } from "@/api/subcription/subs";
 
@@ -23,6 +23,7 @@ const current = computed(() => profiles.value.find(p => p.id === form.value.id))
 const running = computed(() => profiles.value.find(p => p.status === "running"));
 const results = computed(() => current.value?.results || []);
 const network = computed(() => current.value?.network);
+const pinnedIPs = computed(() => current.value?.pinnedIPs || []);
 const recommending = computed(() => form.value.candidateMode === "recommend");
 const recommendedResults = computed(() => current.value ? current.value.candidateMode === "recommend" : recommending.value);
 const carrierNames: Record<string, string> = { CT: "电信", CU: "联通", CM: "移动" };
@@ -63,7 +64,7 @@ function chooseProfile(id: number) {
   void load();
 }
 function newProfile(copy = false) {
-  form.value = copy ? { ...form.value, id: 0, name: "", groupName: "", status: "idle", message: "", results: [], network: undefined, startedAt: undefined, finishedAt: undefined, updatedAt: undefined } : fresh();
+  form.value = copy ? { ...form.value, id: 0, name: "", groupName: "", status: "idle", message: "", results: [], pinnedIPs: [], network: undefined, startedAt: undefined, finishedAt: undefined, updatedAt: undefined } : fresh();
   if (!copy) selectedNode.value = undefined;
   subscriptionID.value = 0;
   selected.value = [];
@@ -120,6 +121,22 @@ async function saveNodes() {
     ElMessage.success(`“${current.value.name}”已更新为本次选中的 ${selected.value.length} 个节点`);
   } catch { /* handled */ } finally { busy.value = false; }
 }
+async function keepIP(ip: string, keep: boolean) {
+  if (!current.value) return;
+  const id = current.value.id;
+  const chosen = new Set(selected.value.map(r => r.ip));
+  busy.value = true;
+  try {
+    await setCDNPinnedIP(id, ip, keep);
+    await load();
+    if (current.value?.id === id) {
+      table.value?.clearSelection();
+      results.value.filter(r => chosen.has(r.ip)).forEach(r => table.value?.toggleRowSelection(r, true));
+    }
+    ElMessage.success(keep ? "后续推荐会优先保留这个 IP" : "已取消保留");
+  } catch { /* request layer handles errors */ }
+  finally { busy.value = false; }
+}
 async function copy() {
   try { await navigator.clipboard.writeText(selected.value.map(r => r.link).join("\n")); ElMessage.success("已复制选中链接"); }
   catch { preview.value = selected.value.map(r => r.link).join("\n"); previewOpen.value = true; }
@@ -151,7 +168,7 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
     <el-alert v-if="!engineReady && !recommending" title="未找到 CloudflareSpeedTest，请在运行设备上配置 CFST_PATH。" type="error" :closable="false" show-icon />
     <div class="cdn-layout">
       <section class="panel input-panel">
-        <div class="panel-title"><h3>优选配置</h3><el-select v-if="profiles.length" :model-value="form.id || undefined" placeholder="选择已保存配置" aria-label="选择已保存配置" @change="chooseProfile"><el-option v-for="p in profiles" :key="p.id" :label="p.name" :value="p.id" /></el-select></div>
+        <div class="panel-title"><h3>优选配置</h3><el-select v-if="profiles.length" :model-value="form.id || undefined" :disabled="busy" placeholder="选择已保存配置" aria-label="选择已保存配置" @change="chooseProfile"><el-option v-for="p in profiles" :key="p.id" :label="p.name" :value="p.id" /></el-select></div>
         <el-form label-position="top" :disabled="current?.status === 'running' || busy">
           <el-form-item :label="form.id ? '正在编辑的配置' : '新配置名称'" required><el-input v-model="form.name" :readonly="!!form.id" maxlength="120" placeholder="请填写名称，例如：西大优选" aria-label="配置名称" />
             <div v-if="form.id" class="profile-actions"><el-button link type="primary" @click="newProfile(true)">复制为新配置</el-button><el-button link @click="renameProfile">重命名</el-button></div>
@@ -174,7 +191,12 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
             </el-form-item>
             <el-form-item label="目标运营商">
               <el-select v-model="form.carrier" placeholder="根据公网 IP 自动识别" aria-label="目标运营商"><el-option label="根据公网 IP 自动识别" value="" /><el-option v-for="(name, code) in carrierNames" :key="code" :label="name" :value="code" /></el-select>
-              <span class="field-help">识别不准确时可手动指定。当前数据仅支持电信、联通、移动的通用推荐，不提供省级实测排名。</span>
+              <span class="field-help">识别不准确时可手动指定。综合多个公开来源、新鲜度和近期历史排序，提供电信、联通、移动通用推荐。</span>
+            </el-form-item>
+            <el-form-item v-if="current" label="保留好用的 IP">
+              <div v-if="pinnedIPs.length" class="pinned-list"><el-tag v-for="ip in pinnedIPs" :key="ip" :closable="!busy && !running" @close="keepIP(ip, false)">{{ ip }}</el-tag></div>
+              <span v-else class="field-help">在推荐结果中点击“保留好用”，后续生成时优先保留。</span>
+              <span class="field-help">保留只作用于当前配置；修改原始节点、目标公网 IP、运营商或优选方式后会清除标记。保存节点以本次勾选为准。</span>
             </el-form-item>
           </template>
           <el-form-item v-else>
@@ -203,18 +225,25 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
           <div v-if="network?.location || network?.warning" class="network-details">
             <p v-if="current?.sourceIP">目标公网 IP：<strong>{{ current.sourceIP }}</strong><br />{{ network?.location }}</p>
             <p v-if="network?.carrier">目标地区：{{ network.province || '未识别' }} · {{ carrierNames[network.carrier] }}<br />匹配范围：同运营商通用推荐（非省级实测）</p>
-            <p v-if="network?.source">数据源：<a :href="network.source" target="_blank" rel="noopener noreferrer">麒麟优选 · BestCF 公开镜像</a><br />数据源更新时间：{{ date(network.sourceUpdatedAt) }}</p>
+            <div v-if="network?.sources?.length" class="feed-statuses">
+              <p>公开候选 {{ network.candidateCount || 0 }} 个 · 已积累 {{ network.historyWindows || 0 }} 个历史时段</p>
+              <div v-for="feed in network.sources" :key="feed.id" class="feed-status"><a :href="feed.url" target="_blank" rel="noopener noreferrer">{{ feed.name }}</a><el-tag :type="feed.error ? 'warning' : feed.count ? 'success' : 'info'" size="small">{{ feed.error ? '暂不可用' : `${feed.count} 个匹配地址` }}</el-tag><span>{{ feed.error || `上游更新：${date(feed.updatedAt)}` }}</span></div>
+              <span class="field-help">三个原始来源均经 BestCF 公开镜像读取。同源镜像不重复加分；来源失效时使用其余有效数据。</span>
+              <span class="field-help">历史在生成推荐时积累，按上游更新时间的 30 分钟窗口去重，参考最近 7 天。首次或历史不足时主要按新鲜度和来源排序；不代表目标线路测速。</span>
+            </div>
+            <p v-else-if="network?.source">数据源：<a :href="network.source" target="_blank" rel="noopener noreferrer">麒麟优选 · BestCF 公开镜像</a><br />数据源更新时间：{{ date(network.sourceUpdatedAt) }}</p>
             <el-alert v-if="network?.warning" :title="network.warning" type="warning" :closable="false" show-icon />
             <span class="field-help">归属地：太平洋 IP 查询；运营商不足时参考 ipapi.is 的 ASN 信息。</span>
           </div>
           <p class="network-note">{{ recommending ? '公网 IP 只用于识别目标线路。推荐不代表目标地区已经测过，也不保证可用或最快；生成后由使用者在目标网络验证。' : '测速从运行 sublinkx 的设备发起，结果只代表这台设备的实际出口。请确保测速流量直连。' }}</p>
         </section>
         <section class="panel results-panel">
-          <div class="panel-title"><div><h3>{{ recommendedResults ? '线路推荐' : '优选结果' }} <span class="count-badge">{{ results.length }}</span></h3><p>{{ recommendedResults ? '同运营商公开推荐顺序；未进行目标地区测速或 TLS 验证。' : '按下载速度排序，已通过原节点域名的 TLS 校验。' }}</p></div><el-button :icon="Refresh" @click="load">刷新</el-button></div>
+          <div class="panel-title"><div><h3>{{ recommendedResults ? '线路推荐' : '优选结果' }} <span class="count-badge">{{ results.length }}</span></h3><p>{{ recommendedResults ? '优先保留好用 IP，再综合来源、新鲜度与历史表现；非目标地区实测。' : '按下载速度排序，已通过原节点域名的 TLS 校验。' }}</p></div><el-button :icon="Refresh" @click="load">刷新</el-button></div>
           <div v-if="!results.length" class="empty-results"><div class="empty-symbol">↗</div><strong>{{ running ? '任务正在后台运行' : '结果将在这里显示' }}</strong><p>{{ running ? '你可以切换到其他页面。' : recommendedResults ? '按目标运营商匹配公开地址；不足时显示实际数量，不虚构结果。' : '仅保留实际达标的 IP，数量不足时不会用失败结果补齐。' }}</p></div>
           <el-table v-else ref="table" :data="results" row-key="ip" @selection-change="selected = $event" class="results-table">
             <el-table-column type="selection" :reserve-selection="true" width="42" /><el-table-column prop="name" label="节点名称" min-width="160" show-overflow-tooltip /><el-table-column prop="ip" label="IP 地址" min-width="155" show-overflow-tooltip />
-            <el-table-column v-if="recommendedResults" label="推荐依据" min-width="170"><template #default>{{ carrierNames[network?.carrier || ''] }}通用 · 非目标省实测</template></el-table-column>
+            <el-table-column v-if="recommendedResults" label="推荐依据" min-width="230"><template #default="{ row }"><el-tag v-if="row.pinned" type="success" size="small">用户保留</el-tag><div>{{ row.basis || `${carrierNames[network?.carrier || '']}通用 · 非目标省实测` }}</div><small v-if="row.sources?.length">{{ row.sources.join('、') }} · {{ date(row.sourceUpdatedAt) }}</small></template></el-table-column>
+            <el-table-column v-if="recommendedResults" label="好用 IP" width="100"><template #default="{ row }"><el-button link :type="row.pinned ? 'success' : 'primary'" :disabled="busy || !!running" @click="keepIP(row.ip, !row.pinned)">{{ row.pinned ? '取消保留' : '保留好用' }}</el-button></template></el-table-column>
             <template v-else>
               <el-table-column label="延迟" width="90"><template #default="{ row }">{{ row.delay.toFixed(0) }} ms</template></el-table-column>
               <el-table-column label="下载" width="112"><template #default="{ row }"><strong class="speed">{{ row.speed.toFixed(2) }}</strong> MB/s</template></el-table-column>
@@ -257,6 +286,10 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
 .file-label input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
 .field-help, .small-note { display: block; color: var(--sx-muted); font-size: 12px; line-height: 1.8; margin: 7px 0 0; }
 .profile-actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; }
+.pinned-list { display: flex; gap: 8px; flex-wrap: wrap; }
+.feed-statuses { margin: 12px 0; }
+.feed-status { display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 8px 0; align-items: center; }
+.feed-status > span:last-child { flex-basis: 100%; color: var(--sx-muted); }
 .template-input { margin-top: 10px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .start-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }

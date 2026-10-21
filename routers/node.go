@@ -19,6 +19,7 @@ func Nodes(r *gin.Engine) {
 		NodesGroup.POST("/cdn/:id/run", api.CDNRun)
 		NodesGroup.POST("/cdn/:id/cancel", api.CDNCancel)
 		NodesGroup.POST("/cdn/:id/import", api.CDNImport)
+		NodesGroup.POST("/cdn/:id/pinned", api.CDNPinnedIP)
 
 	}
 	// 分组

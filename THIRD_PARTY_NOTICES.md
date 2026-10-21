@@ -70,7 +70,10 @@ steps are recorded in this repository's Dockerfile.
 
 | Service | Usage |
 | --- | --- |
-| [麒麟优选](https://api.uouin.com/cloudflare.html) / [BestCF mirror](https://bestcf.pages.dev/uouin/all.txt) | Public ISP recommendations, fetched from the BestCF mirror / 异地线路推荐的公开数据 |
+| [麒麟优选](https://api.uouin.com/cloudflare.html) / [public mirror](https://bestcf.pages.dev/uouin/all.txt) | Public ISP recommendations / 运营商推荐数据 |
+| [WeTest](https://www.wetest.vip/) / [public mirror](https://bestcf.pages.dev/wetest/ipv4.txt) | Public ISP recommendations / 微测运营商推荐数据 |
+| [CFYes public mirror](https://bestcf.pages.dev/cfyes/ipv4.txt) | Public ISP recommendations / CFYes 运营商推荐数据 |
+| [BestCF](https://bestcf.pages.dev/) | Mirror hosting and snapshot timestamps / 公开列表镜像与快照时间 |
 | [PConline IP lookup](https://whois.pconline.com.cn/) | Target IP location and ISP lookup / 目标 IP 地区与运营商查询 |
 | [ipapi.is](https://ipapi.is/) | Fallback ASN information / 辅助识别运营商的 ASN 信息 |
 | [Cloudflare IP ranges](https://www.cloudflare.com/ips/) | Validate recommended addresses / 推荐地址归属校验 |

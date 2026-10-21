@@ -104,6 +104,17 @@ You can enter a public IP from another province while running the application el
 - **Update to the N selected nodes** replaces that profile's saved batch with your selection, so older batches do not accumulate.
 - Existing node IDs are reused where possible to maintain subscription membership. Other profiles and original nodes are managed independently.
 
+### Multiple sources and recommendation history
+
+Recommendations use the public UOUIN, WeTest, and CFYes feeds through BestCF mirrors. Provider identities are kept separate from mirror URLs, so mirrors of the same provider do not earn extra credit. A failed provider does not stop usable providers; the page shows each feed's timestamp, matching count, and errors.
+
+- **Freshness**: Data older than 48 hours, or with invalid timestamps, is excluded. Recent records rank higher.
+- **History**: Each recommendation run records public observations for the last seven days. Records are deduplicated by the provider timestamp's 30-minute window; refreshes, restarts, or another profile do not inflate history.
+- **Ranking and diversity**: Combine provider-relative rank, freshness, support from multiple providers, and historical consistency, with moderate IPv4 subnet diversity.
+- **Keep known-good IPs**: Mark a result to prioritize it in future runs, even when current public feeds omit it. Changing the target IP, ISP, template, or mode clears retention; copying a profile starts without retained IPs. The nodes saved to the library still follow the current selection.
+
+History starts accumulating with recommendation runs after the upgrade. Initial runs show limited history. Provider measurements are not displayed as measurements from the target network, and the ranking is not a speed prediction.
+
 ### Templates and limits
 
 | Original node | Supported transport |
@@ -205,7 +216,10 @@ See [go.mod](go.mod) and [webs/package.json](webs/package.json) for the dependen
 
 | Service | Role in this repository |
 | --- | --- |
-| [麒麟优选](https://api.uouin.com/cloudflare.html) / [BestCF public mirror](https://bestcf.pages.dev/uouin/all.txt) | Public ISP recommendation data, fetched from the BestCF mirror |
+| [UOUIN](https://api.uouin.com/cloudflare.html) / [public mirror](https://bestcf.pages.dev/uouin/all.txt) | ISP recommendations and provider-relative ranking |
+| [WeTest](https://www.wetest.vip/) / [public mirror](https://bestcf.pages.dev/wetest/ipv4.txt) | Another source of ISP recommendations |
+| [CFYes public mirror](https://bestcf.pages.dev/cfyes/ipv4.txt) | CFYes ISP recommendations |
+| [BestCF](https://bestcf.pages.dev/) | Mirrors and snapshot timestamps for these public lists |
 | [PConline IP lookup](https://whois.pconline.com.cn/) | Location and ISP lookup for the entered public IP |
 | [ipapi.is](https://ipapi.is/) | ASN information used as a fallback when the ISP cannot be determined |
 | [Cloudflare official IP ranges](https://www.cloudflare.com/ips/) | Validate whether recommended IPs belong to Cloudflare's official ranges |

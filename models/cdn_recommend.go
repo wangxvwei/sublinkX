@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"strconv"
 	"strings"
 	"sublink/node"
 	"time"
@@ -21,12 +20,15 @@ import (
 const cdnRecommendationSource = "https://bestcf.pages.dev/uouin/all.txt"
 
 type CDNNetwork struct {
-	Location        string     `json:"location"`
-	Province        string     `json:"province"`
-	Carrier         string     `json:"carrier"`
-	Source          string     `json:"source"`
-	SourceUpdatedAt *time.Time `json:"sourceUpdatedAt"`
-	Warning         string     `json:"warning"`
+	Location        string          `json:"location"`
+	Province        string          `json:"province"`
+	Carrier         string          `json:"carrier"`
+	Source          string          `json:"source"`
+	SourceUpdatedAt *time.Time      `json:"sourceUpdatedAt"`
+	Warning         string          `json:"warning"`
+	Sources         []CDNFeedStatus `json:"sources,omitempty"`
+	CandidateCount  int             `json:"candidateCount,omitempty"`
+	HistoryWindows  int             `json:"historyWindows,omitempty"`
 }
 
 func cdnHTTP(ctx context.Context, address string) ([]byte, error) {
@@ -38,7 +40,7 @@ func cdnHTTP(ctx context.Context, address string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "sublinkX-CDN/2.3.6")
+	req.Header.Set("User-Agent", "sublinkX-CDN/2.3.9")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, errors.New("网络请求未完成")
@@ -95,19 +97,27 @@ func lookupCDNNetwork(ctx context.Context, p *CDNProfile) error {
 	if p.Network.Carrier == "" {
 		// Ownership names may describe a university instead of its upstream ISP.
 		if data, err := cdnHTTP(ctx, "https://api.ipapi.is/?q="+url.QueryEscape(p.SourceIP)); err == nil {
-			var asn struct {
-				IP  string `json:"ip"`
-				ASN string `json:"asn"`
-			}
-			if json.Unmarshal(data, &asn) == nil && asn.IP == p.SourceIP {
-				p.Network.Carrier = cdnCarrier(asn.ASN)
-			}
+			p.Network.Carrier = cdnASNCarrier(data, p.SourceIP)
 		}
 	}
 	if p.Network.Carrier == "" {
 		return errors.New("已识别地区，但无法确认电信/联通/移动；请在运营商选项中手动指定实际线路")
 	}
 	return nil
+}
+
+func cdnASNCarrier(data []byte, ip string) string {
+	var info struct {
+		IP  string `json:"ip"`
+		ASN struct {
+			Org  string `json:"org"`
+			Name string `json:"name"`
+		} `json:"asn"`
+	}
+	if json.Unmarshal(data, &info) != nil || info.IP != ip {
+		return ""
+	}
+	return cdnCarrier(info.ASN.Org + " " + info.ASN.Name)
 }
 
 func cloudflareRanges(ctx context.Context) ([]netip.Prefix, error) {
@@ -174,60 +184,5 @@ func recommendCDN(ctx context.Context, p *CDNProfile) ([]CDNResult, error) {
 	if !isCloudflare {
 		return nil, errors.New("原节点域名未解析到 Cloudflare 官方地址；线路推荐目前仅支持 Cloudflare")
 	}
-	data, err := cdnHTTP(ctx, cdnRecommendationSource)
-	if err != nil {
-		return nil, fmt.Errorf("公开推荐数据暂时不可用：%w，请稍后重试", err)
-	}
-	return readCDNRecommendations(data, p, template, ranges, time.Now())
-}
-
-func readCDNRecommendations(data []byte, p *CDNProfile, template node.CDNTemplate, ranges []netip.Prefix, now time.Time) ([]CDNResult, error) {
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	header := strings.Split(lines[0], "|")
-	if len(header) != 3 || len(lines) > 1000 {
-		return nil, errors.New("公开推荐数据格式无效")
-	}
-	// The public feed timestamps its snapshots in China time without a year.
-	zone := time.FixedZone("UTC+8", 8*3600)
-	localNow := now.In(zone)
-	updated, err := time.ParseInLocation("2006 01-02 15:04", fmt.Sprintf("%d %s", localNow.Year(), strings.TrimSpace(header[1])), zone)
-	if err == nil && localNow.Month() == time.January && updated.Month() == time.December {
-		updated = updated.AddDate(-1, 0, 0)
-	}
-	if err != nil || now.Sub(updated) > 48*time.Hour || updated.After(now.Add(5*time.Minute)) {
-		return nil, errors.New("公开推荐数据已过期或更新时间无效，请稍后重试")
-	}
-	p.Network.SourceUpdatedAt = &updated
-	results := []CDNResult{}
-	seen := map[string]bool{}
-	carriers := map[string]string{"电信": "CT", "联通": "CU", "移动": "CM"}
-	for _, line := range lines[1:] {
-		address, description, ok := strings.Cut(line, "#")
-		fields := strings.Split(description, "|")
-		if !ok || len(fields) != 5 || carriers[strings.TrimSpace(fields[1])] != p.Network.Carrier {
-			continue
-		}
-		host, portText, err := net.SplitHostPort(strings.TrimSpace(address))
-		if err != nil {
-			continue
-		}
-		port, err := strconv.Atoi(portText)
-		if err != nil || port != template.Port {
-			continue
-		}
-		ip, err := PublicCDNIP(host)
-		if err != nil || seen[ip] || ip == p.SourceIP || strings.TrimSpace(fields[2]) != ip || !inCDNRanges(netip.MustParseAddr(ip), ranges) {
-			continue
-		}
-		seen[ip] = true
-		link, name := template.WithIP(ip, cdnNodeName(p.Name, len(results)))
-		results = append(results, CDNResult{IP: ip, Name: name, Link: link, Recommendation: true})
-		if len(results) == p.Count {
-			break
-		}
-	}
-	if len(results) == 0 {
-		return nil, errors.New("该运营商和端口暂时没有有效的 Cloudflare 推荐地址")
-	}
-	return results, nil
+	return rankCDNRecommendations(ctx, p, template, ranges, time.Now())
 }
