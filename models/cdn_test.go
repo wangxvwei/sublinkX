@@ -1,13 +1,71 @@
 package models
 
 import (
+	"fmt"
+	"net/netip"
 	"path/filepath"
 	"strings"
+	"sublink/node"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestCDNRemoteRecommendations(t *testing.T) {
+	p := CDNProfile{Name: "remote", CandidateMode: "recommend", SourceIP: "9.9.9.9", TemplateLink: "vless://u@example.com:443?security=tls&type=ws", IPs: "9.9.9.9", Count: 5, URL: "https://example.com/file", MaxDelay: 500, MaxLoss: 0, Duration: 5}
+	if err := normalizeCDN(&p); err != nil || p.IPs != "" || p.SourceIP != "9.9.9.9" {
+		t.Fatal("home IP was treated as a CDN destination", err)
+	}
+	bad := p
+	bad.SourceIP = "127.0.0.1"
+	if normalizeCDN(&bad) == nil {
+		t.Fatal("accepted a private source IP")
+	}
+	bad.SourceIP = ""
+	if normalizeCDN(&bad) == nil {
+		t.Fatal("accepted missing target IP")
+	}
+	for input, want := range map[string]string{"广西南宁市 某大学": "", "AS4837 CHINA UNICOM China169 Backbone": "CU", "江苏 电信": "CT", "China Mobile": "CM"} {
+		if got := cdnCarrier(input); got != want {
+			t.Fatal("wrong carrier", input, got)
+		}
+	}
+	template, err := node.ParseCDNTemplate(p.TemplateLink)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Network.Carrier = "CU"
+	ranges := []netip.Prefix{netip.MustParsePrefix("104.16.0.0/13")}
+	now := time.Date(2026, 10, 21, 19, 0, 0, 0, time.FixedZone("UTC+8", 8*3600))
+	data := []byte(fmt.Sprintf(`162.159.198.1:443#麒麟优选 | %s | BestCF.pages.dev
+104.16.0.1:443#麒麟优选 | 联通 | 104.16.0.1 | 30ms | 10mb/s
+104.16.0.1:443#麒麟优选 | 联通 | 104.16.0.1 | 30ms | 10mb/s
+104.16.0.2:443#麒麟优选 | 电信 | 104.16.0.2 | 30ms | 10mb/s
+104.16.0.3:8443#麒麟优选 | 联通 | 104.16.0.3 | 30ms | 10mb/s
+127.0.0.1:443#麒麟优选 | 联通 | 127.0.0.1 | 30ms | 10mb/s
+9.9.9.9:443#麒麟优选 | 联通 | 9.9.9.9 | 30ms | 10mb/s
+8.8.8.8:443#麒麟优选 | 联通 | 8.8.8.8 | 30ms | 10mb/s
+104.16.0.4:443#麒麟优选 | 联通 | 104.16.0.4 | 30ms | 10mb/s
+162.159.197.1:443#麒麟优选 | 更多内容 | BestCF.pages.dev`, now.Format("01-02 15:04")))
+	results, err := readCDNRecommendations(data, &p, template, ranges, now)
+	if err != nil || len(results) != 2 || results[0].IP != "104.16.0.1" || results[1].IP != "104.16.0.4" {
+		t.Fatal("wrong filtering/ranking", results, err)
+	}
+	for _, r := range results {
+		if !r.Recommendation || r.TLSOK || r.Speed != 0 || !strings.Contains(r.Link, "sni=example.com") {
+			t.Fatal("recommendation claimed a measurement or lost SNI", r)
+		}
+	}
+	if _, err := readCDNRecommendations(data, &p, template, ranges, now.Add(49*time.Hour)); err == nil {
+		t.Fatal("accepted stale recommendations")
+	}
+	yearEnd := []byte(strings.Replace(string(data), "10-21 19:00", "12-31 23:00", 1))
+	if _, err := readCDNRecommendations(yearEnd, &p, template, ranges, time.Date(2027, 1, 1, 0, 0, 0, 0, now.Location())); err != nil {
+		t.Fatal("year boundary rejected fresh feed", err)
+	}
+}
 
 func TestCDNSelectionAndAtomicImport(t *testing.T) {
 	p := CDNProfile{Name: "test", TemplateLink: "vless://u@example.com:443?security=tls&type=ws", IPs: "104.16.0.1,104.16.0.2\n104.16.0.1\n104.16.0.3\n104.16.0.4", Count: 5, URL: "https://example.com/file", MaxDelay: 500, MaxLoss: 0, MinSpeed: 1, Duration: 5}
@@ -78,5 +136,21 @@ func TestCDNSelectionAndAtomicImport(t *testing.T) {
 	DB.Model(&GroupNode{}).Where("name = ?", "should-not-exist").Count(&count)
 	if count != 0 {
 		t.Fatal("failed import was not atomic")
+	}
+	// Explicit recommendations may be imported without pretending TLS was tested.
+	p.Results[0].TLSOK = false
+	p.Results[0].Recommendation = true
+	if err := DB.Save(&p).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ImportCDN(p.ID, []string{results[0].IP}, "CDN", sub.ID); err == nil {
+		t.Fatal("manual result bypassed TLS requirement")
+	}
+	p.CandidateMode = "recommend"
+	if err := DB.Save(&p).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n, err := ImportCDN(p.ID, []string{results[0].IP}, "CDN", sub.ID); err != nil || n != 1 {
+		t.Fatal("recommendation import failed", n, err)
 	}
 }

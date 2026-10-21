@@ -26,34 +26,39 @@ import (
 )
 
 type CDNResult struct {
-	IP    string  `json:"ip"`
-	Delay float64 `json:"delay"`
-	Loss  float64 `json:"loss"`
-	Speed float64 `json:"speed"`
-	Colo  string  `json:"colo"`
-	TLSOK bool    `json:"tlsOK"`
-	Link  string  `json:"link"`
-	Name  string  `json:"name"`
+	IP             string  `json:"ip"`
+	Delay          float64 `json:"delay"`
+	Loss           float64 `json:"loss"`
+	Speed          float64 `json:"speed"`
+	Colo           string  `json:"colo"`
+	TLSOK          bool    `json:"tlsOK"`
+	Link           string  `json:"link"`
+	Name           string  `json:"name"`
+	Recommendation bool    `json:"recommendation,omitempty"`
 }
 
 type CDNProfile struct {
-	ID           uint        `json:"id" gorm:"primaryKey"`
-	Name         string      `json:"name"`
-	TemplateLink string      `json:"templateLink" gorm:"type:text"`
-	IPs          string      `json:"ips" gorm:"type:text"`
-	Count        int         `json:"count"`
-	URL          string      `json:"url"`
-	MaxDelay     float64     `json:"maxDelay"`
-	MaxLoss      float64     `json:"maxLoss"`
-	MinSpeed     float64     `json:"minSpeed"`
-	Duration     int         `json:"duration"`
-	GroupName    string      `json:"groupName"`
-	Status       string      `json:"status"`
-	Message      string      `json:"message"`
-	Results      []CDNResult `json:"results" gorm:"serializer:json;type:text"`
-	StartedAt    *time.Time  `json:"startedAt"`
-	FinishedAt   *time.Time  `json:"finishedAt"`
-	UpdatedAt    time.Time   `json:"updatedAt"`
+	ID            uint        `json:"id" gorm:"primaryKey"`
+	Name          string      `json:"name"`
+	TemplateLink  string      `json:"templateLink" gorm:"type:text"`
+	CandidateMode string      `json:"candidateMode"`
+	SourceIP      string      `json:"sourceIP"`
+	Carrier       string      `json:"carrier"`
+	Network       CDNNetwork  `json:"network" gorm:"serializer:json;type:text"`
+	IPs           string      `json:"ips" gorm:"type:text"`
+	Count         int         `json:"count"`
+	URL           string      `json:"url"`
+	MaxDelay      float64     `json:"maxDelay"`
+	MaxLoss       float64     `json:"maxLoss"`
+	MinSpeed      float64     `json:"minSpeed"`
+	Duration      int         `json:"duration"`
+	GroupName     string      `json:"groupName"`
+	Status        string      `json:"status"`
+	Message       string      `json:"message"`
+	Results       []CDNResult `json:"results" gorm:"serializer:json;type:text"`
+	StartedAt     *time.Time  `json:"startedAt"`
+	FinishedAt    *time.Time  `json:"finishedAt"`
+	UpdatedAt     time.Time   `json:"updatedAt"`
 }
 
 // ponytail: one process per installation avoids competing bandwidth tests;
@@ -83,7 +88,7 @@ func PublicCDNIP(raw string) (string, error) {
 		netip.MustParsePrefix("192.0.2.0/24").Contains(a) || netip.MustParsePrefix("198.51.100.0/24").Contains(a) ||
 		netip.MustParsePrefix("203.0.113.0/24").Contains(a) || netip.MustParsePrefix("240.0.0.0/4").Contains(a) ||
 		netip.MustParsePrefix("2001:db8::/32").Contains(a) || netip.MustParsePrefix("0.0.0.0/8").Contains(a) {
-		return "", fmt.Errorf("请提供公网 CDN IP：%s", raw)
+		return "", fmt.Errorf("请提供有效的公网 IP：%s", raw)
 	}
 	return a.String(), nil
 }
@@ -93,11 +98,32 @@ func normalizeCDN(p *CDNProfile) error {
 	p.TemplateLink = strings.TrimSpace(p.TemplateLink)
 	p.GroupName = strings.TrimSpace(p.GroupName)
 	p.URL = strings.TrimSpace(p.URL)
+	p.SourceIP = strings.TrimSpace(p.SourceIP)
 	if p.Name == "" || len(p.Name) > 120 || len(p.GroupName) > 120 || len(p.IPs) > 256*1024 {
 		return errors.New("配置名称必填，且输入内容不能过长")
 	}
 	if _, err := node.ParseCDNTemplate(p.TemplateLink); err != nil {
 		return err
+	}
+	// Existing saved profiles keep their explicit candidate lists.
+	if p.CandidateMode == "" {
+		p.CandidateMode = "manual"
+	}
+	if p.CandidateMode != "recommend" && p.CandidateMode != "manual" {
+		return errors.New("请选择异地线路推荐或本机测速")
+	}
+	if p.CandidateMode == "recommend" && p.SourceIP == "" {
+		return errors.New("请填写目标地区的公网 IPv4")
+	}
+	if p.Carrier != "" && p.Carrier != "CT" && p.Carrier != "CU" && p.Carrier != "CM" {
+		return errors.New("运营商须为自动识别、电信、联通或移动")
+	}
+	if p.SourceIP != "" {
+		ip, err := PublicCDNIP(p.SourceIP)
+		if err != nil || !netip.MustParseAddr(ip).Is4() {
+			return errors.New("请输入目标地区有效的公网 IPv4")
+		}
+		p.SourceIP = ip
 	}
 	if p.Count < 5 || p.Count > 10 || p.Duration < 3 || p.Duration > 20 ||
 		math.IsNaN(p.MaxDelay) || math.IsInf(p.MaxDelay, 0) || p.MaxDelay < 1 || p.MaxDelay > 9999 ||
@@ -108,6 +134,10 @@ func normalizeCDN(p *CDNProfile) error {
 	u, err := url.Parse(p.URL)
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || len(p.URL) > 2048 || strings.ContainsAny(p.URL, "\r\n") {
 		return errors.New("测速地址必须是有效的 HTTPS 下载地址")
+	}
+	if p.CandidateMode == "recommend" {
+		p.IPs = "" // A home public IP must never become a CDN destination.
+		return nil
 	}
 	parts := strings.FieldsFunc(p.IPs, func(r rune) bool { return r == ',' || r == '，' || r == '\n' || r == '\r' || r == ' ' || r == '\t' })
 	if len(parts) == 0 || len(parts) > 4096 {
@@ -145,6 +175,7 @@ func SaveCDNProfile(p *CDNProfile) error {
 		}
 	}
 	p.Status, p.Message, p.Results, p.StartedAt, p.FinishedAt = "idle", "配置已保存，点击开始优选", nil, nil, nil
+	p.Network = CDNNetwork{}
 	return DB.Save(p).Error
 }
 
@@ -154,10 +185,6 @@ func StartCDN(id uint) error {
 	if cdnTask.id != 0 {
 		return errors.New("已有测速任务运行中，请等待完成或停止它")
 	}
-	bin, err := CDNExecutable()
-	if err != nil {
-		return errors.New("未找到 CloudflareSpeedTest，请配置 CFST_PATH")
-	}
 	var p CDNProfile
 	if err := DB.First(&p, id).Error; err != nil {
 		return err
@@ -165,8 +192,20 @@ func StartCDN(id uint) error {
 	if err := normalizeCDN(&p); err != nil {
 		return err
 	}
+	var bin string
+	if p.CandidateMode != "recommend" {
+		var err error
+		bin, err = CDNExecutable()
+		if err != nil {
+			return errors.New("未找到 CloudflareSpeedTest，请配置 CFST_PATH")
+		}
+	}
 	now := time.Now()
 	p.Status, p.Message, p.Results, p.StartedAt, p.FinishedAt = "running", "正在测试 IP 延迟和下载速度", nil, &now, nil
+	p.Network = CDNNetwork{}
+	if p.CandidateMode == "recommend" {
+		p.Message = "正在识别目标地区和运营商，获取公开线路推荐"
+	}
 	if err := DB.Save(&p).Error; err != nil {
 		return err
 	}
@@ -193,8 +232,17 @@ func runCDN(ctx context.Context, cancel context.CancelFunc, p CDNProfile, bin st
 		cdnTask.id, cdnTask.cancel = 0, nil
 		cdnTask.Unlock()
 	}()
-	results, err := measureCDN(ctx, p, bin)
+	var results []CDNResult
+	var err error
+	if p.CandidateMode == "recommend" {
+		results, err = recommendCDN(ctx, &p)
+	} else {
+		results, err = measureCDN(ctx, p, bin)
+	}
 	status, message := "completed", fmt.Sprintf("优选完成：目标 %d 个，实际 %d 个；已校验原节点 SNI 的 TLS 连接", p.Count, len(results))
+	if p.CandidateMode == "recommend" {
+		message = fmt.Sprintf("已生成 %d 条同运营商通用推荐（目标 %d 条）；非目标省份实测，未验证代理可用性", len(results), p.Count)
+	}
 	if err != nil {
 		status, message = "failed", err.Error()
 	}
@@ -230,7 +278,7 @@ func measureCDN(ctx context.Context, p CDNProfile, bin string) ([]CDNResult, err
 		return nil, err
 	}
 	args := []string{"-f", input, "-o", output, "-n", "32", "-t", "4", "-dn", strconv.Itoa(p.Count * 3), "-dt", strconv.Itoa(p.Duration),
-		"-tl", strconv.FormatFloat(p.MaxDelay, 'f', -1, 64), "-tlr", strconv.FormatFloat(p.MaxLoss, 'f', -1, 64),
+		"-tl", strconv.Itoa(int(math.Ceil(p.MaxDelay))), "-tlr", strconv.FormatFloat(p.MaxLoss, 'f', -1, 64),
 		"-tp", strconv.Itoa(template.Port), "-url", p.URL, "-p", "0", "-debug"}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
@@ -373,7 +421,7 @@ func ImportCDN(id uint, ips []string, groupName string, subscriptionID int) (int
 	}
 	results := []CDNResult{}
 	for _, result := range p.Results {
-		if selected[result.IP] && result.TLSOK && result.Link != "" {
+		if selected[result.IP] && (result.TLSOK || (p.CandidateMode == "recommend" && result.Recommendation)) && result.Link != "" {
 			results = append(results, result)
 			delete(selected, result.IP)
 		}

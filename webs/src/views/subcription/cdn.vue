@@ -7,6 +7,7 @@ import { getSubs } from "@/api/subcription/subs";
 
 type SavedNode = { ID: number; Name: string; Link: string; LinkOverride?: string };
 const fresh = (): CDNProfile => ({ id: 0, name: "我的 CDN 优选", templateLink: "", ips: "", count: 10,
+  candidateMode: "recommend", sourceIP: "", carrier: "",
   url: "https://cf.xiu2.xyz/url", maxDelay: 500, maxLoss: 0,
   minSpeed: 0.1, duration: 5, groupName: "CDN 优选", status: "idle", message: "", results: [] });
 const form = ref<CDNProfile>(fresh());
@@ -22,6 +23,10 @@ const busy = ref(false);
 const current = computed(() => profiles.value.find(p => p.id === form.value.id));
 const running = computed(() => profiles.value.find(p => p.status === "running"));
 const results = computed(() => current.value?.results || []);
+const network = computed(() => current.value?.network);
+const recommending = computed(() => form.value.candidateMode === "recommend");
+const recommendedResults = computed(() => current.value ? current.value.candidateMode === "recommend" : recommending.value);
+const carrierNames: Record<string, string> = { CT: "电信", CU: "联通", CM: "移动" };
 const selected = ref<CDNResult[]>([]);
 const table = ref<any>();
 const preview = ref("");
@@ -53,7 +58,7 @@ async function poll() {
 }
 function chooseProfile(id: number) {
   const p = profiles.value.find(p => p.id === id);
-  if (p) form.value = { ...p };
+  if (p) form.value = { ...p, candidateMode: p.candidateMode || "manual" };
   selectedNode.value = undefined;
   resultKey = "";
   void load();
@@ -78,7 +83,7 @@ async function save(start: boolean) {
     form.value = response.data;
     if (start) await runCDN(form.value.id);
     await load();
-    ElMessage.success(start ? "已开始优选，切换页面后仍会继续运行" : "配置已保存");
+    ElMessage.success(start ? "任务已开始，切换页面后仍会继续运行" : "配置已保存");
   } catch { /* Request layer displays validation errors. */ }
   finally { busy.value = false; }
 }
@@ -118,11 +123,11 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
 <template>
   <div v-loading="loading" class="cdn-page">
     <div class="page-heading">
-      <div><span class="page-kicker">资源中心</span><h2>CDN 优选</h2><p>从你的候选 IP 中选出更快的入口，保留原节点配置，一次生成多个链接。</p></div>
-      <div class="heading-actions"><el-tag :type="engineReady ? 'success' : 'danger'" effect="plain">{{ engineReady ? '测速引擎就绪' : '测速引擎未安装' }}</el-tag><el-button :icon="Plus" @click="newProfile">新建配置</el-button></div>
+      <div><span class="page-kicker">资源中心</span><h2>CDN 优选</h2><p>填写目标地区公网 IP，识别地区与运营商，生成可直接导入的 CDN 推荐节点。</p></div>
+      <div class="heading-actions"><el-tag v-if="recommending" type="warning" effect="plain">异地推荐 · 非目标地区实测</el-tag><el-tag v-else :type="engineReady ? 'success' : 'danger'" effect="plain">{{ engineReady ? '测速引擎就绪' : '测速引擎未安装' }}</el-tag><el-button :icon="Plus" @click="newProfile">新建配置</el-button></div>
     </div>
-    <div class="steps-strip"><span><b>01</b> 选择原始节点</span><i>→</i><span><b>02</b> 输入候选 IP</span><i>→</i><span><b>03</b> 测速与筛选</span><i>→</i><span><b>04</b> 保存节点</span></div>
-    <el-alert v-if="!engineReady" title="未找到 CloudflareSpeedTest，请在运行设备上配置 CFST_PATH。" type="error" :closable="false" show-icon />
+    <div class="steps-strip"><span><b>01</b> 选择原始节点</span><i>→</i><span><b>02</b> {{ recommending ? '填写目标公网 IP' : '填写 CDN 地址' }}</span><i>→</i><span><b>03</b> {{ recommending ? '匹配公开线路推荐' : '本机测速' }}</span><i>→</i><span><b>04</b> 保存节点</span></div>
+    <el-alert v-if="!engineReady && !recommending" title="未找到 CloudflareSpeedTest，请在运行设备上配置 CFST_PATH。" type="error" :closable="false" show-icon />
     <div class="cdn-layout">
       <section class="panel input-panel">
         <div class="panel-title"><h3>优选配置</h3><el-select v-if="profiles.length" :model-value="form.id || undefined" placeholder="选择已保存配置" aria-label="选择已保存配置" @change="chooseProfile"><el-option v-for="p in profiles" :key="p.id" :label="p.name" :value="p.id" /></el-select></div>
@@ -133,46 +138,74 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
             <el-input v-model="form.templateLink" class="template-input" type="textarea" :rows="3" placeholder="vless://… / vmess://… / trojan://…" aria-label="原始节点链接" />
             <span class="field-help">使用已经能正常连接的 TLS CDN 节点。SNI、Host、路径和认证参数会保留。</span>
           </el-form-item>
-          <el-form-item>
+          <el-form-item label="优选方式">
+            <el-select v-model="form.candidateMode" aria-label="优选方式">
+              <el-option label="异地线路推荐（无需当地设备）" value="recommend" />
+              <el-option label="本机测速（手动提供 CDN 地址）" value="manual" />
+            </el-select>
+          </el-form-item>
+          <template v-if="recommending">
+            <el-form-item label="目标地区公网 IPv4">
+              <el-input v-model="form.sourceIP" maxlength="45" placeholder="例如填写 B 省用户的公网 IP，与 NAS 所在地无关" aria-label="目标地区公网 IPv4" />
+              <span class="field-help">你在 A 省也可以填写 B 省的公网 IP。用于识别目标地区和运营商，不会拿这个 IP 当 CDN 地址测速。</span>
+            </el-form-item>
+            <el-form-item label="目标运营商">
+              <el-select v-model="form.carrier" placeholder="根据公网 IP 自动识别" aria-label="目标运营商"><el-option label="根据公网 IP 自动识别" value="" /><el-option v-for="(name, code) in carrierNames" :key="code" :label="name" :value="code" /></el-select>
+              <span class="field-help">识别不准确时可手动指定。当前数据仅支持电信、联通、移动的通用推荐，不提供省级实测排名。</span>
+            </el-form-item>
+          </template>
+          <el-form-item v-else>
             <template #label><div class="field-label"><span>候选 IP <small>{{ ipCount }} 个</small></span><label class="file-label">导入 TXT<input type="file" accept=".txt,text/plain" aria-label="导入 IP 文件" @change="readFile" /></label></div></template>
             <el-input v-model="form.ips" type="textarea" :rows="6" placeholder="每行一个公网 IP，支持 IPv4 和 IPv6；也可使用空格或逗号分隔。" aria-label="候选 IP 列表" />
-            <span class="field-help">最多 4096 个，只测试你提供的地址；重复项自动去重。</span>
+            <span class="field-help">这里填 CDN 服务器地址，不是公网出口 IP。最多 4096 个；想按异地公网 IP 推荐，请切换上方模式。</span>
           </el-form-item>
-          <div class="form-row"><el-form-item label="优选数量"><el-input-number v-model="form.count" :min="5" :max="10" controls-position="right" /></el-form-item><el-form-item label="每个 IP 下载测速时长"><el-select v-model="form.duration"><el-option v-for="n in [3,5,10,15,20]" :key="n" :label="`${n} 秒`" :value="n" /></el-select></el-form-item></div>
-          <el-collapse v-model="advanced"><el-collapse-item name="advanced" title="高级设置 · 测速地址与筛选条件">
+          <div class="form-row"><el-form-item :label="recommending ? '推荐数量' : '优选数量'"><el-input-number v-model="form.count" :min="5" :max="10" controls-position="right" /></el-form-item><el-form-item v-if="!recommending" label="每个 IP 下载测速时长"><el-select v-model="form.duration"><el-option v-for="n in [3,5,10,15,20]" :key="n" :label="`${n} 秒`" :value="n" /></el-select></el-form-item></div>
+          <el-collapse v-if="!recommending" v-model="advanced"><el-collapse-item name="advanced" title="高级设置 · 测速地址与筛选条件">
             <el-form-item label="HTTPS 下载测速地址"><el-input v-model="form.url" /><span class="field-help">应为候选 IP 所属 CDN 上可下载的大文件。测速地址不可用会导致下载速度为 0。</span></el-form-item>
             <el-form-item label="最大延迟（ms）"><el-input-number v-model="form.maxDelay" :min="1" :max="9999" /></el-form-item>
             <el-form-item label="最大探测失败率"><el-select v-model="form.maxLoss"><el-option label="0%（不接受失败）" :value="0" /><el-option label="25%" :value="0.25" /><el-option label="50%" :value="0.5" /></el-select></el-form-item>
             <el-form-item label="最低下载速度（MB/s）"><el-input-number v-model="form.minSpeed" :min="0" :max="10000" :step="0.1" :precision="2" /></el-form-item>
           </el-collapse-item></el-collapse>
         </el-form>
-        <div class="start-actions"><el-button :icon="Check" :disabled="busy || current?.status === 'running'" @click="save(false)">保存配置</el-button><el-button type="primary" :icon="VideoPlay" :disabled="!engineReady || !!running" :loading="busy" @click="save(true)">开始优选</el-button></div>
-        <p class="small-note">最多下载测速 {{ form.count * 3 }} 个候选后排序。测速会占用运行设备的出口带宽。</p>
+        <div class="start-actions"><el-button :icon="Check" :disabled="busy || current?.status === 'running'" @click="save(false)">保存配置</el-button><el-button type="primary" :icon="VideoPlay" :disabled="(!recommending && !engineReady) || !!running" :loading="busy" @click="save(true)">{{ recommending ? '生成线路推荐' : '开始本机测速' }}</el-button></div>
+        <p v-if="recommending" class="small-note">仅支持 Cloudflare。按公开数据源的运营商排序推荐，不使用 A 省的测速结果推断 B 省速度。</p>
+        <p v-else class="small-note">最多下载测速 {{ form.count * 3 }} 个候选后排序。测速会占用运行设备的出口带宽。</p>
       </section>
       <div class="output-column">
         <section class="panel status-panel">
           <div class="panel-title"><h3>运行状态</h3><el-tag :type="running ? 'warning' : current?.status === 'failed' ? 'danger' : 'info'">{{ statusNames[current?.status || 'idle'] }}</el-tag></div>
           <div v-if="running" class="running-state"><span class="pulse" /><span>{{ running.name }}：{{ running.message }}</span><el-button :icon="VideoPause" @click="stop">停止</el-button></div>
-          <p v-else class="status-message">{{ current?.message || '准备好原始节点和 IP 列表后，即可开始优选。' }}</p>
+          <p v-else class="status-message">{{ current?.message || '选择原节点，填写目标公网 IP，即可生成线路推荐。' }}</p>
           <div class="status-meta"><span>开始：{{ date(current?.startedAt) }}</span><span>完成：{{ date(current?.finishedAt) }}</span></div>
-          <p class="network-note">测速从运行 sublinkx 的设备发起。电脑测试版反映电脑出口；部署到 NAS 后反映 NAS 出口。请确保测速流量直连。</p>
+          <div v-if="network?.location || network?.warning" class="network-details">
+            <p v-if="current?.sourceIP">目标公网 IP：<strong>{{ current.sourceIP }}</strong><br />{{ network?.location }}</p>
+            <p v-if="network?.carrier">目标地区：{{ network.province || '未识别' }} · {{ carrierNames[network.carrier] }}<br />匹配范围：同运营商通用推荐（非省级实测）</p>
+            <p v-if="network?.source">数据源：<a :href="network.source" target="_blank" rel="noopener noreferrer">麒麟优选 · BestCF 公开镜像</a><br />数据源更新时间：{{ date(network.sourceUpdatedAt) }}</p>
+            <el-alert v-if="network?.warning" :title="network.warning" type="warning" :closable="false" show-icon />
+            <span class="field-help">归属地：太平洋 IP 查询；运营商不足时参考 ipapi.is 的 ASN 信息。</span>
+          </div>
+          <p class="network-note">{{ recommending ? '公网 IP 只用于识别目标线路。推荐不代表目标地区已经测过，也不保证可用或最快；生成后由使用者在目标网络验证。' : '测速从运行 sublinkx 的设备发起，结果只代表这台设备的实际出口。请确保测速流量直连。' }}</p>
         </section>
         <section class="panel results-panel">
-          <div class="panel-title"><div><h3>优选结果 <span class="count-badge">{{ results.length }}</span></h3><p>按下载速度排序，已通过原节点域名的 TLS 校验。</p></div><el-button :icon="Refresh" @click="load">刷新</el-button></div>
-          <div v-if="!results.length" class="empty-results"><div class="empty-symbol">↗</div><strong>{{ running ? '正在寻找更好的 CDN 入口' : '优选结果将在这里显示' }}</strong><p>{{ running ? '后台会继续运行，你可以切换到其他页面。' : '仅保留实际达标的 IP，数量不足时不会用失败结果补齐。' }}</p></div>
+          <div class="panel-title"><div><h3>{{ recommendedResults ? '线路推荐' : '优选结果' }} <span class="count-badge">{{ results.length }}</span></h3><p>{{ recommendedResults ? '同运营商公开推荐顺序；未进行目标地区测速或 TLS 验证。' : '按下载速度排序，已通过原节点域名的 TLS 校验。' }}</p></div><el-button :icon="Refresh" @click="load">刷新</el-button></div>
+          <div v-if="!results.length" class="empty-results"><div class="empty-symbol">↗</div><strong>{{ running ? '任务正在后台运行' : '结果将在这里显示' }}</strong><p>{{ running ? '你可以切换到其他页面。' : recommendedResults ? '按目标运营商匹配公开地址；不足时显示实际数量，不虚构结果。' : '仅保留实际达标的 IP，数量不足时不会用失败结果补齐。' }}</p></div>
           <el-table v-else ref="table" :data="results" row-key="ip" @selection-change="selected = $event" class="results-table">
             <el-table-column type="selection" :reserve-selection="true" width="42" /><el-table-column prop="ip" label="IP 地址" min-width="155" show-overflow-tooltip />
-            <el-table-column label="延迟" width="90"><template #default="{ row }">{{ row.delay.toFixed(0) }} ms</template></el-table-column>
-            <el-table-column label="下载" width="112"><template #default="{ row }"><strong class="speed">{{ row.speed.toFixed(2) }}</strong> MB/s</template></el-table-column>
-            <el-table-column label="失败率" width="78"><template #default="{ row }">{{ (row.loss * 100).toFixed(0) }}%</template></el-table-column>
-            <el-table-column prop="colo" label="机房" width="70" /><el-table-column label="链接" width="70"><template #default="{ row }"><el-button link type="primary" @click="showLink(row.link)">预览</el-button></template></el-table-column>
+            <el-table-column v-if="recommendedResults" label="推荐依据" min-width="170"><template #default>{{ carrierNames[network?.carrier || ''] }}通用 · 非目标省实测</template></el-table-column>
+            <template v-else>
+              <el-table-column label="延迟" width="90"><template #default="{ row }">{{ row.delay.toFixed(0) }} ms</template></el-table-column>
+              <el-table-column label="下载" width="112"><template #default="{ row }"><strong class="speed">{{ row.speed.toFixed(2) }}</strong> MB/s</template></el-table-column>
+              <el-table-column label="失败率" width="78"><template #default="{ row }">{{ (row.loss * 100).toFixed(0) }}%</template></el-table-column>
+              <el-table-column prop="colo" label="机房" width="70" />
+            </template>
+            <el-table-column label="链接" width="70"><template #default="{ row }"><el-button link type="primary" @click="showLink(row.link)">预览</el-button></template></el-table-column>
           </el-table>
           <div v-if="results.length" class="result-actions"><span>已选 {{ selected.length }} 个</span><el-button :icon="CopyDocument" :disabled="!selected.length" @click="copy">复制链接</el-button><el-button :icon="Download" :disabled="!selected.length" @click="download">导出 TXT</el-button></div>
           <div class="save-area">
             <h4>保存到 sublinkx</h4><div class="form-row"><el-form-item label="节点分组" label-position="top"><el-select v-model="form.groupName" filterable allow-create default-first-option aria-label="保存分组"><el-option label="CDN 优选" value="CDN 优选" /><el-option v-for="g in groups.filter(g => g !== 'CDN 优选')" :key="g" :label="g" :value="g" /></el-select></el-form-item><el-form-item label="追加到订阅（可选）" label-position="top"><el-select v-model="subscriptionID" aria-label="追加到订阅"><el-option label="仅保存到节点库" :value="0" /><el-option v-for="s in subs" :key="s.ID" :label="s.Name" :value="s.ID" /></el-select></el-form-item></div>
             <el-button type="primary" :icon="Check" :disabled="!selected.length || !!running" :loading="busy" @click="saveNodes">保存选中节点</el-button><p class="small-note">原节点保留；相同配置的相同 IP 会更新现有记录。不会移除订阅中的其他节点。</p>
           </div>
-          <p class="verification-note">这里验证的是 CDN 速度与 TLS 连通性。完整代理连接还需在你的客户端中测试。</p>
+          <p class="verification-note">{{ recommendedResults ? '推荐地址已校验属于 Cloudflare 官方网段，保留原节点端口和配置；速度、TLS 和完整代理连接均需在目标网络测试。' : '这里验证的是 CDN 速度与 TLS 连通性。完整代理连接还需在你的客户端中测试。' }}</p>
         </section>
       </div>
     </div>
@@ -207,6 +240,7 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
 .status-message { font-size: 14px; line-height: 1.8; margin-bottom: 16px; }
 .status-meta { display: flex; flex-wrap: wrap; gap: 8px 24px; color: var(--sx-muted); font-size: 12px; }
 .network-note { background: var(--sx-accent-soft); border-radius: 7px; font-size: 12px; line-height: 1.8; padding: 12px 14px; margin: 16px 0 0; color: var(--sx-muted); }
+.network-details { margin-top: 16px; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
 .running-state { justify-content: flex-start; font-size: 13px; line-height: 1.7; margin-bottom: 16px; }
 .running-state .el-button { margin-left: auto; }
 .pulse { width: 9px; height: 9px; flex-shrink: 0; background: #f59e0b; border-radius: 50%; }

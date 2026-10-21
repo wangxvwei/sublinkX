@@ -3,9 +3,12 @@ import request from "@/utils/request";
 export interface CDNResult {
   ip: string; delay: number; loss: number; speed: number; colo: string;
   tlsOK: boolean; link: string; name: string;
+  recommendation?: boolean;
 }
 export interface CDNProfile {
   id: number; name: string; templateLink: string; ips: string; count: number;
+  candidateMode?: "recommend" | "manual"; sourceIP?: string; carrier?: string;
+  network?: { location: string; province: string; carrier: string; source: string; sourceUpdatedAt?: string; warning: string };
   url: string; maxDelay: number; maxLoss: number; minSpeed: number; duration: number;
   groupName: string; status: string; message: string; results: CDNResult[] | null;
   startedAt?: string; finishedAt?: string; updatedAt?: string;
