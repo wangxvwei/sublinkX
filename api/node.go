@@ -21,6 +21,24 @@ type nodeView struct {
 
 func buildNodeViews(ns []models.Node) []nodeView {
 	sourceNames := loadXUISourceNames(ns)
+	cdnIDs := []uint{}
+	for _, n := range ns {
+		if rawID, ok := strings.CutPrefix(n.Source, "cdn:"); ok {
+			if id, err := strconv.ParseUint(rawID, 10, 32); err == nil && id > 0 {
+				cdnIDs = append(cdnIDs, uint(id))
+			}
+		}
+	}
+	if len(cdnIDs) > 0 {
+		var profiles []models.CDNProfile
+		if err := models.DB.Select("id", "name").Where("id IN ?", cdnIDs).Find(&profiles).Error; err != nil {
+			log.Println("load CDN source names failed:", err)
+		} else {
+			for _, p := range profiles {
+				sourceNames[fmt.Sprintf("cdn:%d", p.ID)] = p.Name
+			}
+		}
+	}
 	views := make([]nodeView, 0, len(ns))
 	for _, item := range ns {
 		views = append(views, nodeView{

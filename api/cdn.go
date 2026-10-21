@@ -73,14 +73,13 @@ func CDNImport(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8192)
 	var input struct {
 		IPs            []string `json:"ips"`
-		GroupName      string   `json:"groupName"`
 		SubscriptionID int      `json:"subscriptionID"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(400, gin.H{"msg": "保存请求格式不正确"})
 		return
 	}
-	n, err := models.ImportCDN(id, input.IPs, input.GroupName, input.SubscriptionID)
+	n, err := models.ImportCDN(id, input.IPs, input.SubscriptionID)
 	if err != nil {
 		c.JSON(400, gin.H{"msg": err.Error()})
 		return

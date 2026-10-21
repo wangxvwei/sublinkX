@@ -53,6 +53,7 @@ type CDNProfile struct {
 	MinSpeed      float64     `json:"minSpeed"`
 	Duration      int         `json:"duration"`
 	GroupName     string      `json:"groupName"`
+	NamingVersion int         `json:"-"`
 	Status        string      `json:"status"`
 	Message       string      `json:"message"`
 	Results       []CDNResult `json:"results" gorm:"serializer:json;type:text"`
@@ -168,15 +169,38 @@ func SaveCDNProfile(p *CDNProfile) error {
 	if cdnTask.id != 0 && cdnTask.id == p.ID {
 		return errors.New("任务运行中，请先停止再修改配置")
 	}
-	if p.ID != 0 {
-		var old CDNProfile
-		if err := DB.First(&old, p.ID).Error; err != nil {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var duplicates int64
+		if err := tx.Model(&CDNProfile{}).Where("name = ? AND id <> ?", p.Name, p.ID).Count(&duplicates).Error; err != nil {
 			return err
 		}
-	}
-	p.Status, p.Message, p.Results, p.StartedAt, p.FinishedAt = "idle", "配置已保存，点击开始优选", nil, nil, nil
-	p.Network = CDNNetwork{}
-	return DB.Save(p).Error
+		if duplicates > 0 {
+			return errors.New("已有同名优选配置，请填写不同名称以区分各地线路")
+		}
+		old := CDNProfile{}
+		if p.ID != 0 {
+			if err := tx.First(&old, p.ID).Error; err != nil {
+				return err
+			}
+		}
+		// Keep saved results when only the user-defined name changes.
+		settingsUnchanged := old.ID != 0 && old.TemplateLink == p.TemplateLink && old.CandidateMode == p.CandidateMode &&
+			old.SourceIP == p.SourceIP && old.Carrier == p.Carrier && old.IPs == p.IPs && old.Count == p.Count &&
+			old.URL == p.URL && old.MaxDelay == p.MaxDelay && old.MaxLoss == p.MaxLoss && old.MinSpeed == p.MinSpeed && old.Duration == p.Duration
+		p.GroupName, p.NamingVersion, p.Results = old.GroupName, old.NamingVersion, old.Results
+		p.Status, p.Message, p.Network, p.StartedAt, p.FinishedAt = old.Status, old.Message, old.Network, old.StartedAt, old.FinishedAt
+		if p.ID != 0 {
+			if err := syncCDNNaming(tx, p); err != nil {
+				return err
+			}
+		}
+		if !settingsUnchanged {
+			p.Status, p.Message, p.Results, p.StartedAt, p.FinishedAt = "idle", "配置已保存，点击开始优选", nil, nil, nil
+			p.Network = CDNNetwork{}
+		}
+		p.GroupName, p.NamingVersion = p.Name, 1
+		return tx.Save(p).Error
+	})
 }
 
 func StartCDN(id uint) error {
@@ -322,7 +346,7 @@ func measureCDN(ctx context.Context, p CDNProfile, bin string) ([]CDNResult, err
 			continue
 		}
 		result.TLSOK = true
-		result.Link, result.Name = template.WithIP(result.IP)
+		result.Link, result.Name = template.WithIP(result.IP, cdnNodeName(p.Name, len(selected)))
 		selected = append(selected, result)
 		if len(selected) == p.Count {
 			break
@@ -399,13 +423,13 @@ func readCDNCSV(reader io.Reader, p CDNProfile) ([]CDNResult, error) {
 	return results, nil
 }
 
-func ImportCDN(id uint, ips []string, groupName string, subscriptionID int) (int, error) {
+func ImportCDN(id uint, ips []string, subscriptionID int) (int, error) {
 	cdnTask.Lock()
 	defer cdnTask.Unlock()
 	if cdnTask.id == id {
 		return 0, errors.New("请等待测速完成再保存")
 	}
-	if len(ips) == 0 || len(ips) > 10 || len(groupName) > 120 || subscriptionID < 0 {
+	if len(ips) == 0 || len(ips) > 10 || subscriptionID < 0 {
 		return 0, errors.New("请选择 1–10 个测速结果和有效分组")
 	}
 	var p CDNProfile
@@ -414,6 +438,9 @@ func ImportCDN(id uint, ips []string, groupName string, subscriptionID int) (int
 	}
 	if p.Status != "completed" {
 		return 0, errors.New("本次任务尚未完成")
+	}
+	if err := nameCDNResults(&p); err != nil {
+		return 0, err
 	}
 	selected := map[string]bool{}
 	for _, ip := range ips {
@@ -429,10 +456,6 @@ func ImportCDN(id uint, ips []string, groupName string, subscriptionID int) (int
 	if len(selected) != 0 {
 		return 0, errors.New("选中 IP 不属于本次有效结果")
 	}
-	groupName = strings.TrimSpace(groupName)
-	if groupName == "" {
-		groupName = "CDN 优选"
-	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var sub Subcription
 		if subscriptionID != 0 {
@@ -440,8 +463,8 @@ func ImportCDN(id uint, ips []string, groupName string, subscriptionID int) (int
 				return errors.New("目标订阅不存在")
 			}
 		}
-		group := GroupNode{Name: groupName}
-		if err := tx.Where("name = ?", groupName).FirstOrCreate(&group).Error; err != nil {
+		group := GroupNode{Name: p.Name}
+		if err := tx.Where("name = ?", p.Name).FirstOrCreate(&group).Error; err != nil {
 			return err
 		}
 		nodes := []Node{}
@@ -479,7 +502,10 @@ func ImportCDN(id uint, ips []string, groupName string, subscriptionID int) (int
 				return err
 			}
 		}
-		return nil
+		if err := syncCDNNaming(tx, &p); err != nil {
+			return err
+		}
+		return tx.Save(&p).Error
 	})
 	return len(results), err
 }

@@ -2,18 +2,17 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { Plus, Refresh, VideoPlay, VideoPause, CopyDocument, Download, Check } from "@element-plus/icons-vue";
 import { getCDN, saveCDN, runCDN, cancelCDN, importCDN, type CDNProfile, type CDNResult } from "@/api/subcription/cdn";
-import { getNodes, GetGroup } from "@/api/subcription/node";
+import { getNodes } from "@/api/subcription/node";
 import { getSubs } from "@/api/subcription/subs";
 
 type SavedNode = { ID: number; Name: string; Link: string; LinkOverride?: string };
-const fresh = (): CDNProfile => ({ id: 0, name: "我的 CDN 优选", templateLink: "", ips: "", count: 10,
+const fresh = (): CDNProfile => ({ id: 0, name: "", templateLink: "", ips: "", count: 10,
   candidateMode: "recommend", sourceIP: "", carrier: "",
   url: "https://cf.xiu2.xyz/url", maxDelay: 500, maxLoss: 0,
-  minSpeed: 0.1, duration: 5, groupName: "CDN 优选", status: "idle", message: "", results: [] });
+  minSpeed: 0.1, duration: 5, groupName: "", status: "idle", message: "", results: [] });
 const form = ref<CDNProfile>(fresh());
 const profiles = ref<CDNProfile[]>([]);
 const nodes = ref<SavedNode[]>([]);
-const groups = ref<string[]>([]);
 const subs = ref<{ ID: number; Name: string }[]>([]);
 const selectedNode = ref<number>();
 const subscriptionID = ref(0);
@@ -22,6 +21,7 @@ const loading = ref(true);
 const busy = ref(false);
 const current = computed(() => profiles.value.find(p => p.id === form.value.id));
 const running = computed(() => profiles.value.find(p => p.status === "running"));
+const nameUnsaved = computed(() => !!current.value && form.value.name.trim() !== current.value.name);
 const results = computed(() => current.value?.results || []);
 const network = computed(() => current.value?.network);
 const recommending = computed(() => form.value.candidateMode === "recommend");
@@ -42,7 +42,7 @@ async function load() {
   const response: any = await getCDN();
   profiles.value = response.data.profiles || [];
   engineReady.value = response.data.engineReady;
-  const key = `${current.value?.id}:${current.value?.finishedAt || ""}:${results.value.length}`;
+  const key = `${current.value?.id}:${current.value?.updatedAt || ""}:${results.value.length}`;
   if (key !== resultKey) {
     resultKey = key;
     selected.value = [];
@@ -66,7 +66,7 @@ function chooseProfile(id: number) {
 function newProfile() { form.value = fresh(); selectedNode.value = undefined; selected.value = []; }
 function useNode(id: number) {
   const n = nodes.value.find(n => n.ID === id);
-  if (n) { form.value.templateLink = n.LinkOverride || n.Link; if (!form.value.id) form.value.name = `${n.Name} · 优选`; }
+  if (n) form.value.templateLink = n.LinkOverride || n.Link;
 }
 async function readFile(event: Event) {
   const input = event.target as HTMLInputElement;
@@ -95,7 +95,7 @@ async function saveNodes() {
   if (!current.value || !selected.value.length) return;
   busy.value = true;
   try {
-    await importCDN(current.value.id, { ips: selected.value.map(r => r.ip), groupName: form.value.groupName, subscriptionID: subscriptionID.value });
+    await importCDN(current.value.id, { ips: selected.value.map(r => r.ip), subscriptionID: subscriptionID.value });
     ElMessage.success(subscriptionID.value ? "节点已保存并追加到订阅" : "节点已保存到节点库，重复 IP 已去重");
   } catch { /* handled */ } finally { busy.value = false; }
 }
@@ -111,9 +111,9 @@ function showLink(link: string) { preview.value = link; previewOpen.value = true
 function date(raw?: string) { return raw ? new Date(raw).toLocaleString() : "—"; }
 onMounted(async () => {
   try {
-    const [, n, g, s]: any[] = await Promise.all([load(), getNodes(), GetGroup(), getSubs()]);
+    const [, n, s]: any[] = await Promise.all([load(), getNodes(), getSubs()]);
     nodes.value = (n.data || []).filter((n: SavedNode) => /^(vless|vmess|trojan):\/\//.test(n.LinkOverride || n.Link));
-    groups.value = g.data || []; subs.value = s.data || [];
+    subs.value = s.data || [];
     if (profiles.value.length) chooseProfile((running.value || profiles.value[0]).id);
   } catch { /* handled */ } finally { loading.value = false; if (mounted) timer = setTimeout(poll, 2000); }
 });
@@ -132,7 +132,7 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
       <section class="panel input-panel">
         <div class="panel-title"><h3>优选配置</h3><el-select v-if="profiles.length" :model-value="form.id || undefined" placeholder="选择已保存配置" aria-label="选择已保存配置" @change="chooseProfile"><el-option v-for="p in profiles" :key="p.id" :label="p.name" :value="p.id" /></el-select></div>
         <el-form label-position="top" :disabled="current?.status === 'running' || busy">
-          <el-form-item label="配置名称"><el-input v-model="form.name" maxlength="120" placeholder="例如：家里宽带 CF 优选" /></el-form-item>
+          <el-form-item label="配置名称" required><el-input v-model="form.name" maxlength="120" placeholder="请填写名称，例如：西大优选" aria-label="配置名称" /><span class="field-help">分组使用此名称，节点按“名称 · 01、02…”命名。不同地方请新建不同名称的配置。</span></el-form-item>
           <el-form-item label="原始 CDN 节点">
             <el-select v-model="selectedNode" filterable clearable placeholder="从已有节点中选择，也可以在下方粘贴" aria-label="从节点库选择模板" @change="useNode"><el-option v-for="n in nodes" :key="n.ID" :label="n.Name" :value="n.ID" /></el-select>
             <el-input v-model="form.templateLink" class="template-input" type="textarea" :rows="3" placeholder="vless://… / vmess://… / trojan://…" aria-label="原始节点链接" />
@@ -190,7 +190,7 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
           <div class="panel-title"><div><h3>{{ recommendedResults ? '线路推荐' : '优选结果' }} <span class="count-badge">{{ results.length }}</span></h3><p>{{ recommendedResults ? '同运营商公开推荐顺序；未进行目标地区测速或 TLS 验证。' : '按下载速度排序，已通过原节点域名的 TLS 校验。' }}</p></div><el-button :icon="Refresh" @click="load">刷新</el-button></div>
           <div v-if="!results.length" class="empty-results"><div class="empty-symbol">↗</div><strong>{{ running ? '任务正在后台运行' : '结果将在这里显示' }}</strong><p>{{ running ? '你可以切换到其他页面。' : recommendedResults ? '按目标运营商匹配公开地址；不足时显示实际数量，不虚构结果。' : '仅保留实际达标的 IP，数量不足时不会用失败结果补齐。' }}</p></div>
           <el-table v-else ref="table" :data="results" row-key="ip" @selection-change="selected = $event" class="results-table">
-            <el-table-column type="selection" :reserve-selection="true" width="42" /><el-table-column prop="ip" label="IP 地址" min-width="155" show-overflow-tooltip />
+            <el-table-column type="selection" :reserve-selection="true" width="42" /><el-table-column prop="name" label="节点名称" min-width="160" show-overflow-tooltip /><el-table-column prop="ip" label="IP 地址" min-width="155" show-overflow-tooltip />
             <el-table-column v-if="recommendedResults" label="推荐依据" min-width="170"><template #default>{{ carrierNames[network?.carrier || ''] }}通用 · 非目标省实测</template></el-table-column>
             <template v-else>
               <el-table-column label="延迟" width="90"><template #default="{ row }">{{ row.delay.toFixed(0) }} ms</template></el-table-column>
@@ -200,10 +200,11 @@ onUnmounted(() => { mounted = false; clearTimeout(timer); });
             </template>
             <el-table-column label="链接" width="70"><template #default="{ row }"><el-button link type="primary" @click="showLink(row.link)">预览</el-button></template></el-table-column>
           </el-table>
-          <div v-if="results.length" class="result-actions"><span>已选 {{ selected.length }} 个</span><el-button :icon="CopyDocument" :disabled="!selected.length" @click="copy">复制链接</el-button><el-button :icon="Download" :disabled="!selected.length" @click="download">导出 TXT</el-button></div>
+          <div v-if="results.length" class="result-actions"><span>已选 {{ selected.length }} 个</span><el-button :icon="CopyDocument" :disabled="!selected.length || nameUnsaved" @click="copy">复制链接</el-button><el-button :icon="Download" :disabled="!selected.length || nameUnsaved" @click="download">导出 TXT</el-button></div>
+          <el-alert v-if="nameUnsaved" title="名称已修改，请先保存配置，已有节点和分组将同步更名。" type="warning" :closable="false" show-icon />
           <div class="save-area">
-            <h4>保存到 sublinkx</h4><div class="form-row"><el-form-item label="节点分组" label-position="top"><el-select v-model="form.groupName" filterable allow-create default-first-option aria-label="保存分组"><el-option label="CDN 优选" value="CDN 优选" /><el-option v-for="g in groups.filter(g => g !== 'CDN 优选')" :key="g" :label="g" :value="g" /></el-select></el-form-item><el-form-item label="追加到订阅（可选）" label-position="top"><el-select v-model="subscriptionID" aria-label="追加到订阅"><el-option label="仅保存到节点库" :value="0" /><el-option v-for="s in subs" :key="s.ID" :label="s.Name" :value="s.ID" /></el-select></el-form-item></div>
-            <el-button type="primary" :icon="Check" :disabled="!selected.length || !!running" :loading="busy" @click="saveNodes">保存选中节点</el-button><p class="small-note">原节点保留；相同配置的相同 IP 会更新现有记录。不会移除订阅中的其他节点。</p>
+            <h4>保存到 sublinkx</h4><div class="form-row"><el-form-item label="节点分组" label-position="top"><el-input :model-value="current?.name || form.name" readonly placeholder="请先填写并保存配置名称" aria-label="节点分组" /></el-form-item><el-form-item label="追加到订阅（可选）" label-position="top"><el-select v-model="subscriptionID" aria-label="追加到订阅"><el-option label="仅保存到节点库" :value="0" /><el-option v-for="s in subs" :key="s.ID" :label="s.Name" :value="s.ID" /></el-select></el-form-item></div>
+            <el-button type="primary" :icon="Check" :disabled="!selected.length || !!running || nameUnsaved" :loading="busy" @click="saveNodes">保存选中节点</el-button><p class="small-note">分组与配置同名；仅更新当前配置的节点，相同 IP 不重复创建。原节点和订阅中的其他节点保留。</p>
           </div>
           <p class="verification-note">{{ recommendedResults ? '推荐地址已校验属于 Cloudflare 官方网段，保留原节点端口和配置；速度、TLS 和完整代理连接均需在目标网络测试。' : '这里验证的是 CDN 速度与 TLS 连通性。完整代理连接还需在你的客户端中测试。' }}</p>
         </section>

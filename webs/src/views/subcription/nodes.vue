@@ -38,6 +38,7 @@ interface NodeItem {
   Link: string;
   LinkOverride?: string;
   Source?: string;
+  SourceName?: string;
   SourceKey?: string;
   SubID?: string;
   CreatedAt?: string;
@@ -158,7 +159,7 @@ const visibleNodes = computed(() => {
       node.GroupNodes?.some((group) => group.Name === activeGroup.value);
     if (!groupMatched) return false;
     if (!keyword) return true;
-    return [node.Name, node.Link, node.Source, node.SubID]
+    return [node.Name, node.Link, node.SourceName, node.Source, node.SubID]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(keyword));
   });
@@ -904,7 +905,7 @@ function formatSyncResult(result?: SyncResult) {
                 }}</el-tag>
               </div>
               <div class="node-meta">
-                {{ row.Source || "手动节点" }}
+                {{ row.SourceName || row.Source || "手动节点" }}
                 <template v-if="row.SubID"> · {{ row.SubID }}</template>
               </div>
             </template>

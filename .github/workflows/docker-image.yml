@@ -32,21 +32,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.GHCR_IMAGE }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern=v{{version}}
-            type=sha,prefix=sha-
-          labels: |
-            org.opencontainers.image.title=sublinkX
-            org.opencontainers.image.description=sublinkX subscription manager with Clash Verge/Mihomo xhttp support
-
       - name: Compute app version
         id: app_version
         shell: bash
@@ -59,6 +44,23 @@ jobs:
             version="2.2.${GITHUB_RUN_NUMBER}"
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.GHCR_IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.app_version.outputs.version }}
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern=v{{version}}
+            type=sha,prefix=sha-
+          labels: |
+            org.opencontainers.image.version=${{ steps.app_version.outputs.version }}
+            org.opencontainers.image.title=sublinkX
+            org.opencontainers.image.description=sublinkX subscription manager with Clash Verge/Mihomo xhttp support
 
       - name: Build image for verification
         uses: docker/build-push-action@v6
@@ -80,6 +82,7 @@ jobs:
           APP_VERSION: ${{ steps.app_version.outputs.version }}
         run: |
           set -euo pipefail
+          test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' sublinkx:verify)" = "$APP_VERSION"
           docker run --rm --entrypoint /usr/local/bin/cfst sublinkx:verify -h | grep -F 'CloudflareSpeedTest v2.3.5'
           docker run --rm --entrypoint sh sublinkx:verify -c 'test -s /usr/share/doc/cloudflare-speed-test/LICENSE && test -s /usr/share/doc/cloudflare-speed-test/source.tar.gz && test ! -f /app/db/sublink.db'
           docker run -d --name sublinkx-release-check -p 127.0.0.1:18080:8000 sublinkx:verify

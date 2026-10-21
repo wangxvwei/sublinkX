@@ -18,5 +18,5 @@ export const getCDN = () => request({ url: base });
 export const saveCDN = (data: CDNProfile) => request({ url: `${base}/save`, method: "post", data });
 export const runCDN = (id: number) => request({ url: `${base}/${id}/run`, method: "post" });
 export const cancelCDN = (id: number) => request({ url: `${base}/${id}/cancel`, method: "post" });
-export const importCDN = (id: number, data: { ips: string[]; groupName: string; subscriptionID: number }) =>
+export const importCDN = (id: number, data: { ips: string[]; subscriptionID: number }) =>
   request({ url: `${base}/${id}/import`, method: "post", data });

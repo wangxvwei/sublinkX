@@ -16,7 +16,7 @@ func TestCDNLinkPreservesTemplate(t *testing.T) {
 	if encoded, err := ParseCDNTemplate("vless://" + Base64Encode(strings.TrimPrefix(raw, "vless://"))); err != nil || encoded.SNI != template.SNI {
 		t.Fatal("base64 VLESS template not supported", err)
 	}
-	link, name := template.WithIP("2606:4700::1111")
+	link, name := template.WithIP("2606:4700::1111", "西大优选 · 01")
 	u, err := url.Parse(link)
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +45,7 @@ func TestCDNLinkPreservesTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	generated, _ := v.WithIP("104.16.0.1")
+	generated, _ := v.WithIP("104.16.0.1", "西大优选 · 02")
 	generated, err = RenameVMess(generated, "new name")
 	if err != nil {
 		t.Fatal(err)

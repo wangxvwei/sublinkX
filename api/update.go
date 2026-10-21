@@ -53,15 +53,6 @@ type updateStatus struct {
 	PreviousImage string `json:"previousImage"`
 }
 
-type githubRelease struct {
-	TagName string `json:"tag_name"`
-	HTMLURL string `json:"html_url"`
-}
-
-type githubTag struct {
-	Name string `json:"name"`
-}
-
 var updateHTTPClient = &http.Client{Timeout: 8 * time.Second}
 
 func CheckUpdate(currentVersion string) gin.HandlerFunc {
@@ -91,7 +82,12 @@ func CheckUpdate(currentVersion string) gin.HandlerFunc {
 			}
 		}
 
-		latest, releaseURL, err := fetchLatestVersion()
+		latestDigest, err := fetchRemoteImageDigest(dockerImageWithTag(dockerImage))
+		latest := ""
+		if err == nil {
+			info.LatestImageDigest = latestDigest
+			latest, err = fetchRemoteImageVersion(dockerImageWithTag(dockerImage), latestDigest)
+		}
 		if err != nil {
 			if info.Message == "" {
 				info.Message = err.Error()
@@ -105,7 +101,7 @@ func CheckUpdate(currentVersion string) gin.HandlerFunc {
 		}
 
 		info.LatestVersion = latest
-		info.ReleaseURL = releaseURL
+		info.ReleaseURL = fmt.Sprintf("https://github.com/%s/pkgs/container/sublinkx", envOrDefault("UPDATE_REPO", "wangxvwei/sublinkX"))
 		if dockerCheckErr != "" {
 			info.Message = fmt.Sprintf("Docker 镜像检查失败：%s；无法判断 latest 镜像是否更新", dockerCheckErr)
 			c.JSON(http.StatusOK, gin.H{
@@ -158,7 +154,12 @@ func fillDockerUpdateInfo(socketPath, containerName string, info *updateInfo) er
 	currentDigest := repoDigestForImage(imageInfo.RepoDigests, targetImage)
 	info.CurrentImageDigest = currentDigest
 	info.LatestImageDigest = latestDigest
-	info.LatestVersion = "latest@" + shortDigest(latestDigest)
+	if sameDigest(currentDigest, latestDigest) {
+		info.LatestVersion = info.CurrentVersion
+	} else {
+		// A missing label must not hide a verified image update.
+		info.LatestVersion, _ = fetchRemoteImageVersion(targetImage, latestDigest)
+	}
 	info.ReleaseURL = fmt.Sprintf("https://github.com/%s/pkgs/container/sublinkx", envOrDefault("UPDATE_REPO", "wangxvwei/sublinkX"))
 
 	if currentDigest == "" {
@@ -172,6 +173,9 @@ func fillDockerUpdateInfo(socketPath, containerName string, info *updateInfo) er
 		info.Message = "发现新的 Docker 镜像"
 	} else {
 		info.Message = "当前已是最新镜像"
+	}
+	if info.LatestVersion == "" {
+		info.Message += "；暂时无法读取版本号，可重新检查"
 	}
 	return nil
 }
@@ -296,61 +300,6 @@ func ApplyUpdate() gin.HandlerFunc {
 			"msg": "update started",
 		})
 	}
-}
-
-func fetchLatestVersion() (string, string, error) {
-	repo := envOrDefault("UPDATE_REPO", "wangxvwei/sublinkX")
-	releaseURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
-	req, err := http.NewRequest(http.MethodGet, releaseURL, nil)
-	if err != nil {
-		return "", "", err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "sublinkX-update-checker")
-
-	resp, err := updateHTTPClient.Do(req)
-	if err != nil {
-		return "", "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		var release githubRelease
-		if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-			return "", "", err
-		}
-		if release.TagName != "" {
-			return release.TagName, release.HTMLURL, nil
-		}
-	}
-
-	tagURL := fmt.Sprintf("https://api.github.com/repos/%s/tags?per_page=20", repo)
-	req, err = http.NewRequest(http.MethodGet, tagURL, nil)
-	if err != nil {
-		return "", "", err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "sublinkX-update-checker")
-
-	resp, err = updateHTTPClient.Do(req)
-	if err != nil {
-		return "", "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("GitHub 返回状态码 %d", resp.StatusCode)
-	}
-
-	var tags []githubTag
-	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
-		return "", "", err
-	}
-	if len(tags) == 0 {
-		return "", "", fmt.Errorf("未找到可用版本标签")
-	}
-
-	return tags[0].Name, fmt.Sprintf("https://github.com/%s/releases", repo), nil
 }
 
 func fetchRemoteImageDigest(image string) (string, error) {
@@ -1018,14 +967,6 @@ func normalizeDigest(value string) string {
 
 func sameDigest(a, b string) bool {
 	return normalizeDigest(a) != "" && normalizeDigest(a) == normalizeDigest(b)
-}
-
-func shortDigest(value string) string {
-	value = normalizeDigest(value)
-	if len(value) <= 19 {
-		return value
-	}
-	return value[:19]
 }
 
 func shellQuote(value string) string {

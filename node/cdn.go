@@ -91,8 +91,7 @@ func ParseCDNTemplate(raw string) (CDNTemplate, error) {
 	return t, nil
 }
 
-func (t CDNTemplate) WithIP(ip string) (string, string) {
-	name := t.Name + " · CDN · " + ip
+func (t CDNTemplate) WithIP(ip, name string) (string, string) {
 	if t.v != nil {
 		v := make(map[string]json.RawMessage, len(t.v))
 		for k, value := range t.v {

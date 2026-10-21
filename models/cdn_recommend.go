@@ -200,7 +200,6 @@ func readCDNRecommendations(data []byte, p *CDNProfile, template node.CDNTemplat
 	p.Network.SourceUpdatedAt = &updated
 	results := []CDNResult{}
 	seen := map[string]bool{}
-	template.Name += " · 线路推荐"
 	carriers := map[string]string{"电信": "CT", "联通": "CU", "移动": "CM"}
 	for _, line := range lines[1:] {
 		address, description, ok := strings.Cut(line, "#")
@@ -221,7 +220,7 @@ func readCDNRecommendations(data []byte, p *CDNProfile, template node.CDNTemplat
 			continue
 		}
 		seen[ip] = true
-		link, name := template.WithIP(ip)
+		link, name := template.WithIP(ip, cdnNodeName(p.Name, len(results)))
 		results = append(results, CDNResult{IP: ip, Name: name, Link: link, Recommendation: true})
 		if len(results) == p.Count {
 			break

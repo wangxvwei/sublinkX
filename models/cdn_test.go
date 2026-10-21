@@ -115,7 +115,7 @@ func TestCDNSelectionAndAtomicImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	for n := 0; n < 2; n++ {
-		if count, err := ImportCDN(p.ID, []string{results[0].IP, results[1].IP}, "CDN", sub.ID); err != nil || count != 2 {
+		if count, err := ImportCDN(p.ID, []string{results[0].IP, results[1].IP}, sub.ID); err != nil || count != 2 {
 			t.Fatal(count, err)
 		}
 	}
@@ -127,10 +127,10 @@ func TestCDNSelectionAndAtomicImport(t *testing.T) {
 	if err := sub.Find(); err != nil || len(sub.Nodes) != 3 || sub.Nodes[0].ID != original.ID {
 		t.Fatal("subscription append lost existing nodes", err)
 	}
-	if _, err := ImportCDN(p.ID, []string{"104.16.0.99"}, "bad", sub.ID); err == nil {
+	if _, err := ImportCDN(p.ID, []string{"104.16.0.99"}, sub.ID); err == nil {
 		t.Fatal("accepted forged selection")
 	}
-	if _, err := ImportCDN(p.ID, []string{results[0].IP}, "should-not-exist", 999); err == nil {
+	if _, err := ImportCDN(p.ID, []string{results[0].IP}, 999); err == nil {
 		t.Fatal("accepted missing subscription")
 	}
 	DB.Model(&GroupNode{}).Where("name = ?", "should-not-exist").Count(&count)
@@ -143,14 +143,14 @@ func TestCDNSelectionAndAtomicImport(t *testing.T) {
 	if err := DB.Save(&p).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ImportCDN(p.ID, []string{results[0].IP}, "CDN", sub.ID); err == nil {
+	if _, err := ImportCDN(p.ID, []string{results[0].IP}, sub.ID); err == nil {
 		t.Fatal("manual result bypassed TLS requirement")
 	}
 	p.CandidateMode = "recommend"
 	if err := DB.Save(&p).Error; err != nil {
 		t.Fatal(err)
 	}
-	if n, err := ImportCDN(p.ID, []string{results[0].IP}, "CDN", sub.ID); err != nil || n != 1 {
+	if n, err := ImportCDN(p.ID, []string{results[0].IP}, sub.ID); err != nil || n != 1 {
 		t.Fatal("recommendation import failed", n, err)
 	}
 }

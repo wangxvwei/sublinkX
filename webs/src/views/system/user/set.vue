@@ -30,6 +30,7 @@ const form = reactive({
 
 const updateStateType = computed(() => {
   if (!updateInfo.value) return "info";
+  if (!updateInfo.value.latestVersion) return "warning";
   return updateInfo.value.hasUpdate ? "warning" : "success";
 });
 

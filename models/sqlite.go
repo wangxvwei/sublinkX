@@ -35,6 +35,9 @@ func InitSqlite() {
 		log.Println("数据表迁移失败")
 	}
 	db.Model(&CDNProfile{}).Where("status = ?", "running").Updates(map[string]interface{}{"status": "interrupted", "message": "服务重启，任务已中断，可重新开始优选"})
+	if err := migrateCDNNaming(); err != nil {
+		log.Println(err)
+	}
 	// 初始化用户数据
 	err = db.First(&User{}).Error
 	if err == gorm.ErrRecordNotFound {
