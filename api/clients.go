@@ -38,7 +38,10 @@ func GetClient(c *gin.Context) {
 		return
 	}
 
-	switch normalizeClient(c.Query("client"), c.GetHeader("User-Agent")) {
+	client := normalizeClient(c.Query("client"), c.GetHeader("User-Agent"))
+	c.Set("subscriptionID", sub.ID)
+	c.Set("subscriptionClient", client)
+	switch client {
 	case "clash":
 		GetClash(c, sub.Name)
 	case "surge":

@@ -231,7 +231,7 @@ go test ./...
 | [CFYes 公开镜像](https://bestcf.pages.dev/cfyes/ipv4.txt) | CFYes 运营商推荐地址 |
 | [BestCF](https://bestcf.pages.dev/) | 提供上述公开列表的镜像与快照更新时间 |
 | [太平洋网络 IP 查询](https://whois.pconline.com.cn/) | 查询目标公网 IP 的地区与运营商信息 |
-| [ipapi.is](https://ipapi.is/) | 当初步查询无法确定运营商时，辅助参考 ASN 信息 |
+| [ipapi.is](https://ipapi.is/) | 订阅访问 IP 的地区、网络归属与 ASN 查询；辅助 CDN 运营商识别 |
 | [Cloudflare 官方地址段](https://www.cloudflare.com/ips/) | 校验推荐地址是否属于 Cloudflare 官方网段 |
 
 上述服务按实际请求使用，数据可用性、更新时间与限制由各提供方决定。感谢维护者持续提供公开资源，也感谢反馈问题和参与改进的每一位使用者。

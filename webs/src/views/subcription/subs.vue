@@ -50,6 +50,16 @@ interface SubLog {
   Count?: number;
   Addr?: string;
   Date?: string;
+  Country?: string;
+  Province?: string;
+  City?: string;
+  ISP?: string;
+  ASN?: string;
+  Client?: string;
+  UserAgent?: string;
+  IPInfoSource?: string;
+  IPInfoStatus?: string;
+  IPInfoAt?: string;
 }
 
 interface TemplateFile {
@@ -73,6 +83,8 @@ const editorStep = ref(0);
 const editorSteps = ["基本信息", "选择节点", "客户端输出"];
 const selectedNodeIds = ref<number[]>([]);
 const logs = ref<SubLog[]>([]);
+const logsSubscription = ref<Sub | null>(null);
+const logsLoading = ref(false);
 const subscriptionDialogVisible = ref(false);
 const clientDialogVisible = ref(false);
 const qrDialogVisible = ref(false);
@@ -346,9 +358,46 @@ function formatNodeCount(row: Sub | any) {
   return count ? `${count} 个节点` : "暂无节点";
 }
 
-function showLogs(row: Sub | any) {
-  logs.value = row.SubLogs ?? [];
+async function showLogs(row: Sub | any) {
+  logsSubscription.value = row;
+  logs.value = [];
   logsDialogVisible.value = true;
+  await refreshLogs();
+}
+
+async function refreshLogs() {
+  if (!logsSubscription.value) return;
+  logsLoading.value = true;
+  try {
+    const id = logsSubscription.value.ID;
+    await loadSubscriptions();
+    const latest = subscriptions.value.find((sub) => sub.ID === id);
+    logs.value = [...(latest?.SubLogs ?? [])].sort((a, b) =>
+      (b.Date ?? "").localeCompare(a.Date ?? "")
+    );
+  } catch {
+    ElMessage.error("获取访问记录失败，请重试");
+  } finally {
+    logsLoading.value = false;
+  }
+}
+
+function logLocation(log: SubLog) {
+  return (
+    [...new Set([log.Country, log.Province, log.City].filter(Boolean))].join(
+      " · "
+    ) ||
+    log.Addr ||
+    "暂未查询到"
+  );
+}
+
+function logInfoStatus(log: SubLog) {
+  if (log.IPInfoStatus === "local") return "内网地址";
+  if (log.IPInfoStatus === "failed") return "查询暂不可用，访问已记录";
+  return (
+    log.IPInfoSource || (log.Addr ? "历史归属信息" : "等待后台查询，稍后刷新")
+  );
 }
 
 function showClientLinks(row: Sub | any) {
@@ -1072,18 +1121,129 @@ function formatDate(row: Sub | any) {
       </div>
     </el-dialog>
 
-    <el-dialog v-model="logsDialogVisible" title="访问记录" width="760px">
-      <el-table :data="logs" border>
-        <el-table-column prop="IP" label="IP" min-width="150" />
-        <el-table-column prop="Count" label="访问次数" width="110" />
-        <el-table-column prop="Addr" label="来源" min-width="180" />
-        <el-table-column prop="Date" label="最近访问" min-width="180" />
-      </el-table>
+    <el-dialog
+      v-model="logsDialogVisible"
+      :title="`访问记录 · ${logsSubscription?.Name ?? ''}`"
+      width="min(900px, 94vw)"
+    >
+      <p class="access-log-hint">
+        按来源 IP
+        汇总成功下载订阅的次数。归属地为查询结果；通过代理下载时可能显示代理出口。时间以服务端为准。
+      </p>
+      <div v-loading="logsLoading" class="access-log-list">
+        <el-empty
+          v-if="!logs.length && !logsLoading"
+          description="暂无订阅访问记录"
+        />
+        <article v-for="entry in logs" :key="entry.IP" class="access-log-card">
+          <div class="access-log-header">
+            <strong>{{ entry.IP }}</strong>
+            <el-tag size="small">{{
+              entry.IP?.includes(":") ? "IPv6" : "IPv4"
+            }}</el-tag>
+            <span>{{ entry.Count ?? 0 }} 次</span>
+          </div>
+          <dl class="access-log-details">
+            <div>
+              <dt>地区</dt>
+              <dd>{{ logLocation(entry) }}</dd>
+            </div>
+            <div>
+              <dt>运营商 / 网络归属</dt>
+              <dd>{{ entry.ISP || entry.Addr || "暂未查询到" }}</dd>
+            </div>
+            <div>
+              <dt>ASN</dt>
+              <dd>{{ entry.ASN || "暂未查询到" }}</dd>
+            </div>
+            <div>
+              <dt>最近访问</dt>
+              <dd>{{ entry.Date || "—" }}</dd>
+            </div>
+            <div>
+              <dt>订阅格式</dt>
+              <dd>{{ entry.Client || "历史记录未保存" }}</dd>
+            </div>
+            <div>
+              <dt>信息来源 / 状态</dt>
+              <dd>
+                {{ logInfoStatus(entry)
+                }}<small v-if="entry.IPInfoAt"
+                  >查询于 {{ new Date(entry.IPInfoAt).toLocaleString() }}</small
+                >
+              </dd>
+            </div>
+            <div class="access-log-agent">
+              <dt>最近客户端标识（User-Agent）</dt>
+              <dd>{{ entry.UserAgent || "未提供 / 历史记录未保存" }}</dd>
+            </div>
+          </dl>
+        </article>
+      </div>
+      <template #footer
+        ><el-button :loading="logsLoading" @click="refreshLogs"
+          >刷新记录</el-button
+        ></template
+      >
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
+.access-log-hint {
+  margin: 0 0 16px;
+  color: var(--sx-muted);
+  line-height: 1.7;
+}
+.access-log-list {
+  max-height: 60vh;
+  overflow: auto;
+  min-height: 90px;
+}
+.access-log-card {
+  border: 1px solid var(--sx-border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.access-log-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+.access-log-header span:last-child {
+  margin-left: auto;
+}
+.access-log-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 24px;
+  margin: 16px 0 0;
+}
+.access-log-details dt {
+  color: var(--sx-muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.access-log-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.access-log-details small {
+  display: block;
+  color: var(--sx-muted);
+}
+.access-log-agent {
+  grid-column: 1 / -1;
+}
+@media (max-width: 600px) {
+  .access-log-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .subs-page {
   min-height: 100%;
   padding: 20px;
