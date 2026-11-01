@@ -630,58 +630,41 @@ func (s XUISource) fetchAPINodes() ([]XUINodeLink, error) {
 	}
 
 	subCache := map[string][]string{}
+	subErrors := map[string]error{}
 	nodes := []XUINodeLink{}
-	clientsSeen := 0
-	var lastSubscriptionErr error
 	for _, inbound := range inbounds {
 		if !isXUIInboundEnabled(inbound.Enable) {
 			continue
 		}
 		settings, err := parseXUIInboundSettings(inbound.Settings)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("parse x-ui inbound %d settings: %w", inbound.ID, err)
 		}
 		for _, client := range settings.Clients {
-			client.ID = client.Identifier()
-			client.Email = strings.TrimSpace(client.Email)
-			client.SubID = strings.TrimSpace(client.SubID)
-			if client.ID == "" || client.SubID == "" {
+			entry := xuiClientEntry{InboundID: inbound.ID, ID: client.Identifier(),
+				Email: strings.TrimSpace(client.Email), SubID: strings.TrimSpace(client.SubID)}
+			if entry.ID == "" {
 				continue
 			}
-			clientsSeen++
-			links, ok := subCache[client.SubID]
-			if !ok {
-				links, err = fetchXUISubscription(subBaseURL, subPath, client.SubID)
-				if err != nil {
-					lastSubscriptionErr = err
-					subCache[client.SubID] = []string{}
-					continue
+			node := XUINodeLink{Name: entry.DisplayName(), SubID: entry.SubID,
+				SourceKey: fmt.Sprintf("%s:%s", entry.SourceKey(), entry.SubID)}
+			if entry.SubID == "" {
+				node.SkipReason = "empty subId"
+			} else {
+				links, ok := subCache[entry.SubID]
+				if !ok {
+					links, err = fetchXUISubscription(subBaseURL, subPath, entry.SubID)
+					subCache[entry.SubID], subErrors[entry.SubID] = links, err
 				}
-				subCache[client.SubID] = links
+				node.Link = findClientLink(links, entry)
+				if err := subErrors[entry.SubID]; err != nil {
+					node.SkipReason = err.Error()
+				} else if node.Link == "" {
+					node.SkipReason = "matching link not found in subscription"
+				}
 			}
-			entry := xuiClientEntry{
-				InboundID: inbound.ID,
-				ID:        client.ID,
-				Email:     client.Email,
-				SubID:     client.SubID,
-			}
-			link := findClientLink(links, entry)
-			if link == "" {
-				continue
-			}
-			nodes = append(nodes, XUINodeLink{
-				Name:      entry.DisplayName(),
-				Link:      link,
-				SubID:     client.SubID,
-				SourceKey: fmt.Sprintf("%s:%s", entry.SourceKey(), client.SubID),
-			})
+			nodes = append(nodes, node)
 		}
-	}
-	if lastSubscriptionErr != nil {
-		return nil, fmt.Errorf("subscription fetch failed for x-ui source %s/%s; existing nodes were kept: %w", subBaseURL, subPath, lastSubscriptionErr)
-	}
-	if len(nodes) == 0 && clientsSeen > 0 {
-		return nil, fmt.Errorf("found %d x-ui clients but no matching subscription links were found from %s/%s", clientsSeen, subBaseURL, subPath)
 	}
 	return nodes, nil
 }
@@ -958,6 +941,7 @@ try:
         sub_path = read_setting(cur, "subPath", sub_path)
     rows = cur.execute("select id, settings from inbounds where enable=1").fetchall()
     sub_cache = {}
+    sub_errors = {}
     nodes = []
     ctx = ssl._create_unverified_context()
     for inbound_id, settings_raw in rows:
@@ -969,22 +953,25 @@ try:
             client_id = str(client.get("id") or client.get("auth") or "").strip()
             email = str(client.get("email") or client_id).strip()
             sub_id = str(client.get("subId") or "").strip()
-            if not client_id or not sub_id:
+            if not client_id:
                 continue
+            if not sub_id:
+                sub_cache[sub_id] = []
+                sub_errors[sub_id] = "empty subId"
             if sub_id not in sub_cache:
                 url = sub_base_url + "/" + sub_path + "/" + urllib.parse.quote(sub_id)
                 try:
                     with urllib.request.urlopen(url, context=ctx, timeout=15) as resp:
                         body = resp.read().decode()
                     sub_cache[sub_id] = split_links(body)
-                except Exception:
+                except Exception as exc:
                     sub_cache[sub_id] = []
+                    sub_errors[sub_id] = str(exc)
             link = find_link(sub_cache[sub_id], client_id, email)
-            if not link:
-                continue
             nodes.append({
                 "name": email,
                 "link": link,
+                "skipReason": sub_errors.get(sub_id, "matching link not found in subscription" if not link else ""),
                 "subId": sub_id,
                 "sourceKey": "inbound:%s:client:%s:sub:%s" % (inbound_id, client_id, sub_id),
             })

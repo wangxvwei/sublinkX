@@ -59,6 +59,7 @@ type XUINodeLink struct {
 	LinkOverride string `json:"linkOverride"`
 	SubID        string `json:"subId"`
 	SourceKey    string `json:"sourceKey"`
+	SkipReason   string `json:"skipReason,omitempty"`
 }
 
 type XUINodeLinkOptions struct {
@@ -109,6 +110,11 @@ func SyncXUINodes(opts XUISyncOptions) (XUISyncResult, error) {
 	if err != nil {
 		return result, err
 	}
+	sqlDB, err := xuiDB.DB()
+	if err != nil {
+		return result, err
+	}
+	defer sqlDB.Close()
 
 	if opts.SubscriptionPath == "" {
 		opts.SubscriptionPath = readXUISetting(xuiDB, "subPath")
@@ -123,53 +129,27 @@ func SyncXUINodes(opts XUISyncOptions) (XUISyncResult, error) {
 	}
 
 	subCache := map[string][]string{}
+	subErrors := map[string]error{}
 	nodeLinks := []XUINodeLink{}
-
 	for _, client := range clients {
-		sourceKey := fmt.Sprintf("%s:%s", client.SourceKey(), client.SubID)
-
+		node := XUINodeLink{Name: client.DisplayName(), SubID: client.SubID,
+			SourceKey: fmt.Sprintf("%s:%s", client.SourceKey(), client.SubID)}
 		if client.SubID == "" {
-			result.Skipped++
-			result.SkippedOn = append(result.SkippedOn, XUISkippedNode{
-				Name:   client.DisplayName(),
-				SubID:  client.SubID,
-				Reason: "empty subId",
-			})
-			continue
-		}
-
-		links, ok := subCache[client.SubID]
-		if !ok {
-			links, err = fetchXUISubscription(opts.SubscriptionBaseURL, opts.SubscriptionPath, client.SubID)
-			if err != nil {
-				result.Skipped++
-				result.SkippedOn = append(result.SkippedOn, XUISkippedNode{
-					Name:   client.DisplayName(),
-					SubID:  client.SubID,
-					Reason: err.Error(),
-				})
-				continue
+			node.SkipReason = "empty subId"
+		} else {
+			links, ok := subCache[client.SubID]
+			if !ok {
+				links, err = fetchXUISubscription(opts.SubscriptionBaseURL, opts.SubscriptionPath, client.SubID)
+				subCache[client.SubID], subErrors[client.SubID] = links, err
 			}
-			subCache[client.SubID] = links
+			node.Link = findClientLink(links, client)
+			if err := subErrors[client.SubID]; err != nil {
+				node.SkipReason = err.Error()
+			} else if node.Link == "" {
+				node.SkipReason = "matching link not found in subscription"
+			}
 		}
-
-		link := findClientLink(links, client)
-		if link == "" {
-			result.Skipped++
-			result.SkippedOn = append(result.SkippedOn, XUISkippedNode{
-				Name:   client.DisplayName(),
-				SubID:  client.SubID,
-				Reason: "matching link not found in subscription",
-			})
-			continue
-		}
-
-		nodeLinks = append(nodeLinks, XUINodeLink{
-			Name:      client.DisplayName(),
-			Link:      link,
-			SubID:     client.SubID,
-			SourceKey: sourceKey,
-		})
+		nodeLinks = append(nodeLinks, node)
 	}
 
 	written, err := UpsertXUINodeLinks(nodeLinks, XUINodeLinkOptions{
@@ -185,6 +165,8 @@ func SyncXUINodes(opts XUISyncOptions) (XUISyncResult, error) {
 	result.Updated += written.Updated
 	result.Unchanged += written.Unchanged
 	result.Deleted += written.Deleted
+	result.Skipped += written.Skipped
+	result.SkippedOn = append(result.SkippedOn, written.SkippedOn...)
 	result.Nodes = append(result.Nodes, written.Nodes...)
 
 	return result, nil
@@ -211,11 +193,13 @@ func UpsertXUINodeLinks(nodeLinks []XUINodeLink, opts XUINodeLinkOptions) (XUISy
 		}
 		seen[sourceKey] = true
 		if strings.TrimSpace(nodeLink.Link) == "" {
+			// Preserve this client even if its subscription ID changed.
+			seen[strings.TrimSuffix(sourceKey, nodeLink.SubID)] = true
 			result.Skipped++
 			result.SkippedOn = append(result.SkippedOn, XUISkippedNode{
 				Name:   nodeLink.Name,
 				SubID:  nodeLink.SubID,
-				Reason: "empty node link",
+				Reason: firstNonEmpty(nodeLink.SkipReason, "empty node link"),
 			})
 			continue
 		}
@@ -521,7 +505,7 @@ func deleteMissingXUINodes(source string, seen map[string]bool) (int, error) {
 	}
 	deleted := 0
 	for _, node := range nodes {
-		if seen[node.SourceKey] {
+		if seen[node.SourceKey] || seen[strings.TrimSuffix(node.SourceKey, node.SubID)] {
 			continue
 		}
 		if err := node.Del(); err != nil {

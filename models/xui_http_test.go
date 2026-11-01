@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -96,30 +95,5 @@ func TestXUIRequestDoesNotRetryCanceledRequest(t *testing.T) {
 	_, err := doXUIRequestWithClient(client, req)
 	if !errors.Is(err, context.Canceled) || attempts != 1 {
 		t.Fatalf("attempts = %d, error = %v", attempts, err)
-	}
-}
-
-func TestXUIPartialSubscriptionFailureDoesNotReturnIncompleteNodeSet(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/panel/api/inbounds/list":
-			w.Header().Set("Content-Type", "application/json")
-			io.WriteString(w, `{"success":true,"obj":[{"id":1,"enable":true,"settings":{"clients":[{"id":"good-client","email":"good","subId":"good"},{"id":"bad-client","email":"bad","subId":"bad"}]}}]}`)
-		case "/dingyue/good":
-			io.WriteString(w, "vless://good-client@example.test:443#good")
-		case "/dingyue/bad":
-			http.Error(w, "upstream unavailable", http.StatusBadGateway)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-	source := XUISource{PanelBaseURL: server.URL, SubBaseURL: server.URL, SubPath: "dingyue", APIToken: "test"}
-	nodes, err := source.fetchAPINodes()
-	if err == nil || len(nodes) != 0 {
-		t.Fatalf("partial fetch returned nodes=%d error=%v", len(nodes), err)
-	}
-	if !strings.Contains(err.Error(), "existing nodes were kept") {
-		t.Fatalf("unexpected error: %v", err)
 	}
 }
