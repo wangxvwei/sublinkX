@@ -70,9 +70,11 @@ type XUINodeLinkOptions struct {
 }
 
 type xuiInbound struct {
-	ID       int
-	Enable   int
-	Settings string
+	ID             int
+	Enable         int
+	Settings       string
+	Protocol       string
+	StreamSettings string
 }
 
 type xuiClient struct {
@@ -87,6 +89,13 @@ func (c xuiClient) Identifier() string {
 		return id
 	}
 	return strings.TrimSpace(c.Auth)
+}
+
+func (c xuiClient) identifierForProtocol(protocol string) string {
+	if (protocol == "hysteria" || protocol == "hysteria2") && strings.TrimSpace(c.Auth) != "" {
+		return strings.TrimSpace(c.Auth)
+	}
+	return c.Identifier()
 }
 
 type xuiInboundSettings struct {
@@ -249,6 +258,30 @@ type xuiClientEntry struct {
 	ID        string
 	Email     string
 	SubID     string
+	Protocol  string
+	Network   string
+	Security  string
+}
+
+type xuiStreamSettings struct {
+	Network  string `json:"network"`
+	Security string `json:"security"`
+}
+
+func parseXUIStreamSettings(raw json.RawMessage) (xuiStreamSettings, error) {
+	var stream xuiStreamSettings
+	if len(raw) == 0 || string(raw) == "null" {
+		return stream, nil
+	}
+	if raw[0] == '"' {
+		var text string
+		if err := json.Unmarshal(raw, &text); err != nil {
+			return stream, err
+		}
+		raw = json.RawMessage(text)
+	}
+	err := json.Unmarshal(raw, &stream)
+	return stream, err
 }
 
 func (c xuiClientEntry) SourceKey() string {
@@ -277,7 +310,7 @@ func normalizeXUISyncOptions(opts XUISyncOptions) XUISyncOptions {
 
 func readXUIClients(xuiDB *gorm.DB) ([]xuiClientEntry, error) {
 	var inbounds []xuiInbound
-	if err := xuiDB.Raw("select id, enable, settings from inbounds where enable = 1").Scan(&inbounds).Error; err != nil {
+	if err := xuiDB.Raw("select * from inbounds where enable = 1").Scan(&inbounds).Error; err != nil {
 		return nil, err
 	}
 
@@ -287,8 +320,12 @@ func readXUIClients(xuiDB *gorm.DB) ([]xuiClientEntry, error) {
 		if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
 			continue
 		}
+		stream, err := parseXUIStreamSettings(json.RawMessage(inbound.StreamSettings))
+		if err != nil {
+			return nil, err
+		}
 		for _, client := range settings.Clients {
-			clientID := client.Identifier()
+			clientID := client.identifierForProtocol(inbound.Protocol)
 			if clientID == "" {
 				continue
 			}
@@ -297,6 +334,9 @@ func readXUIClients(xuiDB *gorm.DB) ([]xuiClientEntry, error) {
 				ID:        clientID,
 				Email:     strings.TrimSpace(client.Email),
 				SubID:     strings.TrimSpace(client.SubID),
+				Protocol:  inbound.Protocol,
+				Network:   stream.Network,
+				Security:  stream.Security,
 			})
 		}
 	}
@@ -382,6 +422,39 @@ func padBase64(s string) string {
 }
 
 func findClientLink(links []string, client xuiClientEntry) string {
+	// One account may share its UUID across several inbounds.
+	filtered := make([]string, 0, len(links))
+	for _, link := range links {
+		u, err := url.Parse(link)
+		if err != nil {
+			continue
+		}
+		protocol := func(v string) string {
+			if v == "hysteria" || v == "hy2" {
+				return "hysteria2"
+			}
+			return v
+		}
+		if client.Protocol != "" && protocol(u.Scheme) != protocol(client.Protocol) {
+			continue
+		}
+		if client.Protocol == "vless" {
+			network := func(v string) string {
+				if v == "" || v == "raw" {
+					return "tcp"
+				}
+				return v
+			}
+			if client.Network != "" && network(u.Query().Get("type")) != network(client.Network) {
+				continue
+			}
+			if client.Security != "" && client.Security != "none" && u.Query().Get("security") != client.Security {
+				continue
+			}
+		}
+		filtered = append(filtered, link)
+	}
+	links = filtered
 	for _, link := range links {
 		u, err := url.Parse(link)
 		if err == nil && u.User != nil && u.User.Username() == client.ID {

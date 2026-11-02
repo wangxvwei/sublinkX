@@ -594,9 +594,11 @@ type xuiAPIResponse struct {
 }
 
 type xuiAPIInbound struct {
-	ID       int             `json:"id"`
-	Enable   any             `json:"enable"`
-	Settings json.RawMessage `json:"settings"`
+	ID             int             `json:"id"`
+	Enable         any             `json:"enable"`
+	Settings       json.RawMessage `json:"settings"`
+	Protocol       string          `json:"protocol"`
+	StreamSettings json.RawMessage `json:"streamSettings"`
 }
 
 func (s XUISource) fetchAPINodes() ([]XUINodeLink, error) {
@@ -640,10 +642,16 @@ func (s XUISource) fetchAPINodes() ([]XUINodeLink, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parse x-ui inbound %d settings: %w", inbound.ID, err)
 		}
+		stream, err := parseXUIStreamSettings(inbound.StreamSettings)
+		if err != nil {
+			return nil, err
+		}
 		for _, client := range settings.Clients {
-			entry := xuiClientEntry{InboundID: inbound.ID, ID: client.Identifier(),
-				Email: strings.TrimSpace(client.Email), SubID: strings.TrimSpace(client.SubID)}
+			entry := xuiClientEntry{InboundID: inbound.ID, ID: client.identifierForProtocol(inbound.Protocol),
+				Email: strings.TrimSpace(client.Email), SubID: strings.TrimSpace(client.SubID),
+				Protocol: inbound.Protocol, Network: stream.Network, Security: stream.Security}
 			if entry.ID == "" {
+
 				continue
 			}
 			node := XUINodeLink{Name: entry.DisplayName(), SubID: entry.SubID,
@@ -664,6 +672,7 @@ func (s XUISource) fetchAPINodes() ([]XUINodeLink, error) {
 				}
 			}
 			nodes = append(nodes, node)
+
 		}
 	}
 	return nodes, nil
@@ -910,7 +919,20 @@ def split_links(raw):
                 pass
     return []
 
-def find_link(links, client_id, email):
+def find_link(links, client_id, email, protocol="", stream=None):
+    normalize = lambda value: "hysteria2" if value in ("hy2", "hysteria") else value
+    network = lambda value: "tcp" if value in ("", "raw") else value
+    stream = stream or {}
+    filtered = []
+    for link in links:
+        u = urllib.parse.urlparse(link)
+        q = urllib.parse.parse_qs(u.query)
+        if protocol and normalize(u.scheme) != normalize(protocol): continue
+        if protocol == "vless":
+            if stream.get("network") and network(q.get("type", [""])[0]) != network(stream["network"]): continue
+            if stream.get("security") not in (None, "", "none") and q.get("security", [""])[0] != stream["security"]: continue
+        filtered.append(link)
+    links = filtered
     for link in links:
         try:
             u = urllib.parse.urlparse(link)
@@ -936,21 +958,28 @@ try:
     sub_base_url = (payload.get("sub_base_url") or "https://127.0.0.1:2096").rstrip("/")
     sub_path = (payload.get("sub_path") or "dingyue").strip("/")
     con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
     cur = con.cursor()
     if not payload.get("sub_path"):
         sub_path = read_setting(cur, "subPath", sub_path)
-    rows = cur.execute("select id, settings from inbounds where enable=1").fetchall()
+    rows = cur.execute("select * from inbounds where enable=1").fetchall()
     sub_cache = {}
     sub_errors = {}
     nodes = []
     ctx = ssl._create_unverified_context()
-    for inbound_id, settings_raw in rows:
+    for row in rows:
+        row = dict(row)
+        inbound_id, settings_raw = row["id"], row["settings"]
+        protocol = row.get("protocol") or ""
+        stream = json.loads(row.get("stream_settings") or "{}")
         try:
             settings = json.loads(settings_raw or "{}")
         except Exception:
             continue
         for client in settings.get("clients", []):
             client_id = str(client.get("id") or client.get("auth") or "").strip()
+            if protocol in ("hysteria", "hysteria2") and client.get("auth"):
+                client_id = str(client["auth"]).strip()
             email = str(client.get("email") or client_id).strip()
             sub_id = str(client.get("subId") or "").strip()
             if not client_id:
@@ -967,7 +996,7 @@ try:
                 except Exception as exc:
                     sub_cache[sub_id] = []
                     sub_errors[sub_id] = str(exc)
-            link = find_link(sub_cache[sub_id], client_id, email)
+            link = find_link(sub_cache[sub_id], client_id, email, protocol, stream)
             nodes.append({
                 "name": email,
                 "link": link,

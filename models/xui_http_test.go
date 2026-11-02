@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -95,5 +96,39 @@ func TestXUIRequestDoesNotRetryCanceledRequest(t *testing.T) {
 	_, err := doXUIRequestWithClient(client, req)
 	if !errors.Is(err, context.Canceled) || attempts != 1 {
 		t.Fatalf("attempts = %d, error = %v", attempts, err)
+	}
+}
+func TestXUISharedAccountMatchesInboundProtocolAndTransport(t *testing.T) {
+	links := []string{
+		"vless://shared-id@192.0.2.1:443?type=tcp&security=reality#user",
+		"vless://shared-id@cdn.example:443?type=xhttp&security=tls#user",
+		"hysteria2://hy-secret@192.0.2.1:443?sni=panel.example#user",
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/panel/api/inbounds/list":
+			io.WriteString(w, `{"success":true,"obj":[
+			{"id":1,"enable":true,"protocol":"vless","streamSettings":"{\"network\":\"raw\",\"security\":\"reality\"}","settings":{"clients":[{"id":"shared-id","email":"user","subId":"shared"}]}},
+			{"id":2,"enable":true,"protocol":"vless","streamSettings":{"network":"xhttp","security":"none"},"settings":{"clients":[{"id":"shared-id","email":"user","subId":"shared"}]}},
+			{"id":3,"enable":true,"protocol":"hysteria","streamSettings":{"network":"hysteria","security":"tls"},"settings":{"clients":[{"id":"shared-id","auth":"hy-secret","email":"user","subId":"shared"}]}}
+			]}`)
+		case "/dingyue/shared":
+			io.WriteString(w, strings.Join(links, "\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	nodes, err := (XUISource{PanelBaseURL: server.URL, SubBaseURL: server.URL, SubPath: "dingyue", APIToken: "test"}).fetchAPINodes()
+	if err != nil || len(nodes) != 3 {
+		t.Fatalf("nodes=%d error=%v", len(nodes), err)
+	}
+	for i, node := range nodes {
+		if node.Link != links[i] {
+			t.Fatalf("inbound %d selected %q, want %q", i+1, node.Link, links[i])
+		}
+	}
+	if got := findClientLink(links[:1], xuiClientEntry{ID: "shared-id", Protocol: "vless", Network: "xhttp"}); got != "" {
+		t.Fatalf("missing XHTTP link matched another inbound: %q", got)
 	}
 }
